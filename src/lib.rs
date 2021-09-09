@@ -53,6 +53,7 @@
 //! # };
 //! ```
 
+mod controller;
 mod datatypes;
 mod discovery;
 mod snapshot;
@@ -60,9 +61,10 @@ mod speaker;
 mod track;
 mod utils;
 
+pub use controller::{Command, Controller};
 pub use datatypes::{RepeatMode, SpeakerInfo};
 pub use discovery::{discover, find};
-pub use rupnp::{self, ssdp::URN};
+pub use rupnp::{self, http::Uri, ssdp::URN, Service};
 pub use snapshot::Snapshot;
 pub use speaker::Speaker;
 use thiserror::*;
@@ -91,6 +93,12 @@ pub enum Error {
         /// The action payload
         payload: String,
     },
+    /// The discovery can return an empty stream of speakers.
+    #[error("no speakers detected")]
+    NoSpeakersDetected,
+    /// Error with subscriptions
+    #[error("Subscriber says: {0}")]
+    SubscriberError(String),
     /// An impossible? situation where a speaker isn't included
     /// in its own zone group state
     #[error("asked for zone group state but the speaker doesn't seem to be included there")]

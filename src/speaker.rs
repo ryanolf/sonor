@@ -13,16 +13,22 @@ pub(crate) const SONOS_URN: URN = URN::device("schemas-upnp-org", "ZonePlayer", 
 const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
 const DEVICE_PROPERTIES: &URN = &URN::service("schemas-upnp-org", "DeviceProperties", 1);
 const RENDERING_CONTROL: &URN = &URN::service("schemas-upnp-org", "RenderingControl", 1);
-const ZONE_GROUP_TOPOLOGY: &URN = &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
+pub(crate) const ZONE_GROUP_TOPOLOGY: &URN =
+    &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
 const QUEUE: &URN = &URN::service("schemas-sonos-com", "Queue", 1);
 const MUSIC_SERVICES: &URN = &URN::service("schemas-upnp-org", "MusicServices", 1);
+
+pub(crate) const EXTRA_DEVICE_FIELDS: &[&str; 2] = &["roomName", "UDN"];
 
 const DEFAULT_ARGS: &str = "<InstanceID>0</InstanceID>";
 
 #[derive(Debug, Clone)]
 /// A sonos speaker, wrapping a UPnP-Device and providing user-oriented methods in an asynyronous
 /// API.
-pub struct Speaker(Device);
+pub struct Speaker {
+    pub(crate) device: Device,
+    pub(crate) info: SpeakerInfo,
+}
 
 #[allow(missing_docs)]
 impl Speaker {
@@ -31,7 +37,15 @@ impl Speaker {
     /// which is used by sonos devices.
     pub fn from_device(device: Device) -> Option<Self> {
         if device.device_type() == &SONOS_URN {
-            Some(Self(device))
+            let name = device.get_extra_element("roomName")?.to_string();
+            let uuid = device.get_extra_element("UDN")?[5..].to_string();
+            let location = device.url().to_string();
+            let info = SpeakerInfo {
+                name,
+                uuid,
+                location,
+            };
+            Some(Self { device, info })
         } else {
             None
         }
@@ -39,34 +53,44 @@ impl Speaker {
 
     /// Creates a speaker from an IPv4 address.
     /// It returns `Ok(None)` when the device was found but isn't a sonos player.
-    pub async fn from_ip(addr: Ipv4Addr) -> Result<Option<Self>> {
+    pub async fn from_ip(addr: Ipv4Addr) -> Result<Option<Speaker>> {
         let uri = format!("http://{}:1400/xml/device_description.xml", addr)
             .parse()
             .expect("is always valid");
 
-        Ok(Device::from_url(uri).await.map(Speaker::from_device)?)
+        Ok(Device::from_url_with_extra(uri, EXTRA_DEVICE_FIELDS)
+            .await
+            .map(Speaker::from_device)?)
+    }
+
+    // Creates a speaker from a SpeakerInfo
+    pub async fn from_speaker_info(info: &SpeakerInfo) -> Result<Option<Self>> {
+        let url = info.location().parse();
+        let device = Device::from_url_with_extra(url?, EXTRA_DEVICE_FIELDS).await?;
+        Ok(Self::from_device(device))
     }
 
     pub fn device(&self) -> &Device {
-        &self.0
+        &self.device
     }
 
-    pub async fn name(&self) -> Result<String> {
-        self.action(DEVICE_PROPERTIES, "GetZoneAttributes", "")
+    pub async fn update_name(&mut self) -> Result<&str> {
+        if let Ok(new_name) = self
+            .action(DEVICE_PROPERTIES, "GetZoneAttributes", "")
             .await?
             .extract("CurrentZoneName")
+        {
+            self.info.name = new_name;
+        };
+        Ok(&self.info.name)
     }
 
-    pub async fn uuid(&self) -> Result<String> {
-        let uuid = self
-            ._zone_group_state()
-            .await?
-            .into_iter()
-            .flat_map(|(_, speakers)| speakers)
-            .find(|speaker_info| self.0.url() == speaker_info.location())
-            .map(|speaker_info| speaker_info.uuid);
+    pub fn name(&self) -> &str {
+        &self.info.name
+    }
 
-        uuid.ok_or(Error::SpeakerNotIncludedInOwnZoneGroupState)
+    pub fn uuid(&self) -> &str {
+        &self.info.uuid
     }
 
     // AV_TRANSPORT
@@ -368,24 +392,7 @@ impl Speaker {
             .await?
             .extract("ZoneGroupState")?;
 
-        let doc = Document::parse(&state)?;
-        let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
-
-        state
-            .children()
-            .filter(Node::is_element)
-            .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroup"))
-            .map(|group| {
-                let coordinator = utils::find_node_attribute(group, "Coordinator")?.to_string();
-                let members = group
-                    .children()
-                    .filter(Node::is_element)
-                    .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroupMember"))
-                    .map(SpeakerInfo::from_xml)
-                    .collect::<Result<Vec<_>>>()?;
-                Ok((coordinator, members))
-            })
-            .collect()
+        extract_zone_topology(&state)
     }
 
     /// Returns all groups in the system as a map from the group coordinators UUID to a list of [Speaker Info](struct.SpeakerInfo.html)s.
@@ -507,14 +514,36 @@ impl Speaker {
         payload: &str,
     ) -> Result<HashMap<String, String>> {
         Ok(self
-            .0
+            .device
             .find_service(service)
             .ok_or_else(|| Error::MissingServiceForUPnPAction {
                 service: service.clone(),
                 action: action.to_string(),
                 payload: payload.to_string(),
             })?
-            .action(self.0.url(), action, payload)
+            .action(self.device.url(), action, payload)
             .await?)
     }
+}
+
+pub(crate) fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
+    let doc = Document::parse(&state_xml)?;
+    // println!("{:#?}", doc);
+    let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
+
+    state
+        .children()
+        .filter(Node::is_element)
+        .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroup"))
+        .map(|group| {
+            let coordinator = utils::find_node_attribute(group, "Coordinator")?.to_string();
+            let members = group
+                .children()
+                .filter(Node::is_element)
+                .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroupMember"))
+                .map(SpeakerInfo::from_xml)
+                .collect::<Result<Vec<_>>>()?;
+            Ok((coordinator, members))
+        })
+        .collect()
 }

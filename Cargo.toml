@@ -19,7 +19,13 @@ log = "0.4"
 roxmltree = "0.18"
 thiserror = "1.0"
 http = "0.2"
+tokio = { version = "1.0", features = ["sync", "time"] }
+fastrand = "1.5.0"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }
 futures = "0.3"
+xml-rs = "0.8"
+
+[patch.crates-io]
+rupnp = { path = "../rupnp" }
