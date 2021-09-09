@@ -5,7 +5,7 @@ use xml::escape::escape_str_pcdata;
 async fn main() -> Result<(), sonor::Error> {
     let transport_uri = "x-sonos-http:librarytrack:a.1442979904.mp4?sid=204";
     // let transport_uri = "x-rincon-cpcontainer:1006206cplaylist:pl.cf589c8b40dc40cd9ddc2e61493d5efd?sid=204";
-    let speaker = sonor::find("Master Bedroom", Duration::from_secs(3))
+    let speaker = sonor::find("Living Room", Duration::from_secs(3))
         .await?
         .unwrap();
 
@@ -21,13 +21,12 @@ async fn main() -> Result<(), sonor::Error> {
         <desc id="cdudn" nameSpace="urn:schemas-rinconnetworks-com:metadata-1-0/">SA_RINCON52231_X_#Svc52231-0-Token</desc>
     </item>
 </DIDL-Lite>"#;
-    println!("Seting metadata {}", metadata);
     speaker
-        .set_transport_uri(transport_uri, &escape_str_pcdata(metadata))
+        .queue_next(transport_uri, &escape_str_pcdata(metadata))
         .await?;
-    println!("Set metadata");
+    println!("{:#?}", speaker.queue().await?[3]);
     speaker.play().await?;
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     speaker.apply(snapshot).await?;
 

@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
 }
 
 async fn general(speaker: &Speaker) -> Result<()> {
-    println!("Name: {}", speaker.name().await?);
+    println!("Name: {}", speaker.name());
     Ok(())
 }
 
