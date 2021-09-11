@@ -1,35 +1,24 @@
-#[allow(unused_imports)]
-use sonor::{Command, Controller, Error};
-use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+use std::time::Duration;
+
+use sonor::{Error, Manager};
+use tokio::time::sleep;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let mut manager = Controller::new().await?;
+    simple_logger::init_with_level(log::Level::Debug).unwrap();
 
-    let (tx, rx) = mpsc::channel(32);
+    let manager = Manager::new().await?;
+    println!("got manager");
+    sleep(Duration::from_millis(2000)).await;
 
-    println!("Initialized manager with devices:");
-    for device in manager.speakers().iter() {
-        println!("- {}", device.name());
-    }
+    let uri = "x-sonos-http:librarytrack:a.1442979904.mp4?sid=204";
+    let zone = manager.get_zone("Nursery").await?;
+    let snapshot = zone.take_snapshot().await?;
+    zone.play_now(uri).await?;
 
-    manager.drop_speaker();
+    sleep(Duration::from_millis(5000)).await;
+    zone.pause().await?;
+    zone.apply_snapshot(snapshot).await?;
 
-    println!("Now we have:");
-    for device in manager.speakers().iter() {
-        println!("- {}", device.name());
-    }
-    let tx2 = tx.clone();
-    let handle = tokio::spawn(async move {
-        manager.run(tx2, rx).await?;
-        Ok(())
-    });
-
-    // Should look for handle to await and then make new manager. System may
-    // get out of sync and throw an error. Rediscover in that case.
-
-    sleep(Duration::from_millis(10000)).await;
-    tx.send(Command::Break).await.unwrap();
-    handle.await.unwrap()
+    Ok(())
 }

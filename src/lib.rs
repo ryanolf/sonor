@@ -53,6 +53,7 @@
 //! # };
 //! ```
 
+mod manager;
 mod controller;
 mod datatypes;
 mod discovery;
@@ -60,7 +61,9 @@ mod snapshot;
 mod speaker;
 mod track;
 mod utils;
+mod metadata;
 
+pub use manager::{Manager, Zone};
 pub use controller::{Command, Controller};
 pub use datatypes::{RepeatMode, SpeakerInfo};
 pub use discovery::{discover, find};
@@ -94,11 +97,23 @@ pub enum Error {
         payload: String,
     },
     /// The discovery can return an empty stream of speakers.
-    #[error("no speakers detected")]
+    #[error("No speakers detected")]
     NoSpeakersDetected,
     /// Error with subscriptions
     #[error("Subscriber says: {0}")]
     SubscriberError(String),
+    /// If the controller panics or drops the receiver
+    #[error("Controller has dropped the receiver")]
+    MessageSendError(#[from] tokio::sync::mpsc::error::SendError<Command>),
+    /// If the controller panics formulation a response
+    #[error("Controller has dropped the response sender")]
+    MessageRecvError(#[from] tokio::sync::oneshot::error::RecvError),
+    /// Controller not initialized
+    #[error("Controller not initialized")]
+    ControllerNotInitialized,
+    /// Zone does not exist
+    #[error("The requested zone name is not valid")]
+    ZoneDoesNotExist,
     /// An impossible? situation where a speaker isn't included
     /// in its own zone group state
     #[error("asked for zone group state but the speaker doesn't seem to be included there")]
