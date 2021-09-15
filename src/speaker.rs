@@ -4,13 +4,14 @@ use crate::{
     utils::{self, HashMapExt},
     Error, RepeatMode, Result, Snapshot, SpeakerInfo,
 };
+
 use roxmltree::{Document, Node};
 use rupnp::{ssdp::URN, Device};
 use std::{collections::HashMap, net::Ipv4Addr};
 
 pub(crate) const SONOS_URN: URN = URN::device("schemas-upnp-org", "ZonePlayer", 1);
 
-const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
+pub(crate) const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
 const DEVICE_PROPERTIES: &URN = &URN::service("schemas-upnp-org", "DeviceProperties", 1);
 const RENDERING_CONTROL: &URN = &URN::service("schemas-upnp-org", "RenderingControl", 1);
 pub(crate) const ZONE_GROUP_TOPOLOGY: &URN =
@@ -528,7 +529,6 @@ impl Speaker {
 
 pub(crate) fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
     let doc = Document::parse(&state_xml)?;
-    // println!("{:#?}", doc);
     let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
 
     state
@@ -546,4 +546,22 @@ pub(crate) fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<
             Ok((coordinator, members))
         })
         .collect()
+}
+
+pub(crate) fn extract_av_transport_last_change(state_xml: &str) -> Result<Vec<(String, String)>> {
+    let doc = Document::parse(&state_xml)?;
+    let state = utils::find_root_node(&doc, "InstanceID", "Last Change Variables")?;
+    // let keys = ["CurrentPlayMode", "CurrentTrack", "CurrentCrossfadeMode", "AVTransportURI"];
+
+    Ok(state
+        .children()
+        .filter(Node::is_element)
+        // .filter(|c| keys.contains(&c.tag_name().name()))
+        .map(|c| {
+            (
+                c.tag_name().name().to_string(),
+                c.attribute("val").unwrap_or("").to_string(),
+            )
+        })
+        .collect())
 }

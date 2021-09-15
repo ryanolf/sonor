@@ -68,6 +68,21 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
         .collect::<FuturesUnordered<_>>())
 }
 
+/// Discover one sonos player on the network
+pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
+    // this method searches for devices, and returns first one it finds
+    let devices =
+        rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS).await?;
+    futures_util::pin_mut!(devices);
+
+    while let Some(device) = devices.try_next().await?  {
+        if let Some(speaker) = Speaker::from_device(device) {
+            return Ok(speaker)
+        }
+    }
+    Err(Error::NoSpeakersDetected)
+}
+
 /// Search for a sonos speaker by its name.
 ///
 /// # Example Usage
