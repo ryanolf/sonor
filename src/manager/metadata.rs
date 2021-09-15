@@ -2,7 +2,7 @@
 
 use xml::escape::escape_str_pcdata;
 
-pub fn guess_uri_and_metadata(uri: &str) -> (String, String) {
+pub(super) fn guess_uri_and_metadata(_uri: &str) -> (String, String) {
     let uri = "x-sonos-http:librarytrack:a.1442979904.mp4?sid=204";
     let metadata = r#"
 <DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/">

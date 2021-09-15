@@ -1,24 +1,22 @@
 #[allow(unused_imports)]
-use sonor::{Command, Controller, Error};
-use tokio::time::{sleep, Duration};
-use log;
+use super::{*, controller::Controller};
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
+#[tokio::test]
+async fn test_controller() -> Result<(), Error> {
     simple_logger::init_with_level(log::Level::Debug).unwrap();
     let mut controller = Controller::new();
-    let tx = controller.init().await?;
+    let _tx = controller.init().await?;
 
-    println!("Initialized manager with devices:");
+    log::info!("Initialized manager with devices:");
     for device in controller.speakers().iter() {
-        println!("- {}", device.name());
+        log::info!("     - {}", device.name());
     }
 
-    controller.drop_speaker();
+    controller._drop_speaker();
 
-    println!("Now we have:");
+    log::info!("Now we have:");
     for device in controller.speakers().iter() {
-        println!("- {}", device.name());
+        log::info!("     - {}", device.name());
     }
 
     let handle = tokio::spawn(async move {
@@ -29,7 +27,7 @@ async fn main() -> Result<(), Error> {
     // Should look for handle to await and then make new manager. System may
     // get out of sync and throw an error. Rediscover in that case.
 
-    sleep(Duration::from_millis(10000)).await;
-    tx.send(Command::Break).await.unwrap();
-    handle.await.unwrap()
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    handle.abort();
+    handle.await.unwrap_or(Ok(()))
 }

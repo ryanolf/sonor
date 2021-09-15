@@ -67,7 +67,7 @@ impl Hash for SpeakerInfo {
 
 #[allow(missing_docs)]
 impl SpeakerInfo {
-    pub(crate) fn from_xml(node: Node<'_, '_>) -> Result<Self> {
+    pub fn from_xml(node: Node<'_, '_>) -> Result<Self> {
         let mut uuid = None;
         let mut name = None;
         let mut location = None;
