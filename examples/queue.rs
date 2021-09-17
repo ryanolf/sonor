@@ -22,7 +22,7 @@ async fn main() -> Result<(), sonor::Error> {
     </item>
 </DIDL-Lite>"#;
     speaker
-        .queue_next(transport_uri, &escape_str_pcdata(metadata))
+        .queue_next(transport_uri, &escape_str_pcdata(metadata), Some(0))
         .await?;
     println!("{:#?}", speaker.queue().await?[3]);
     speaker.play().await?;

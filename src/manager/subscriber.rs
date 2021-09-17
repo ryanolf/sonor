@@ -97,19 +97,19 @@ impl Subscriber {
                 // due to no more subscribers, and resubscription timer
                 tokio::select! {
                     maybe_state_vars = &mut stream.next() => match maybe_state_vars {
-                        Some(Ok(state_vars)) => match service_type {
+                        Some(Ok(mut state_vars)) => match service_type {
                             ZONE_GROUP_TOPOLOGY => {
                                 state_vars
-                                    .get("ZoneGroupState")
-                                    .and_then(|xml| extract_zone_topology(xml)
+                                    .remove("ZoneGroupState")
+                                    .and_then(|xml| extract_zone_topology(&xml)
                                         .map_err(|err| warn!("Unable to extract topology: {}", err))
                                         .ok())
                                     .and_then(|topology| tx.send(TopoUpdate(uuid.clone(), topology)).ok());
                             }
                             AV_TRANSPORT => {
                                 state_vars
-                                    .get("LastChange")
-                                    .and_then(|xml| extract_av_transport_last_change(xml)
+                                    .remove("LastChange")
+                                    .and_then(|xml| extract_av_transport_last_change(&xml)
                                         .map_err(|err| warn!("Unable to extract last change: {}", err))
                                         .ok())
                                     .and_then(|last_change| tx.send(AVTransUpdate(uuid.clone(), last_change)).ok());

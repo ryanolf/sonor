@@ -59,6 +59,7 @@ mod discovery;
 mod snapshot;
 mod speaker;
 mod track;
+mod content;
 mod utils;
 
 pub use manager::{Manager, Zone};
@@ -69,6 +70,7 @@ pub use snapshot::Snapshot;
 pub use speaker::Speaker;
 use thiserror::*;
 pub use track::{Track, TrackInfo};
+pub(crate) use content::Content;
 
 /// Represents an error encountered by Sonor
 #[derive(Error, Debug)]

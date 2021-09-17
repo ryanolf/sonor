@@ -2,15 +2,18 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{Snapshot, SpeakerInfo, URN};
 
-use super::Error;
+use super::{Error, mediasource::MediaSource};
 
 #[derive(Debug)]
-pub(super) enum ZoneAction {
+pub enum ZoneAction {
     Exists,
-    PlayNow { uri: String, metadata: String },
+    PlayNow(MediaSource),
+    AddToQueue(MediaSource),
     Pause,
     TakeSnapshot,
+    ClearQueue,
     ApplySnapshot(Snapshot),
+    GetQueue
 }
 
 #[derive(Debug)]
