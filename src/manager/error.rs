@@ -10,8 +10,8 @@ pub enum Error {
     #[error("Error in event subscription: {0}")]
     SubscriberError(String),
     /// If the controller panics or drops the receiver
-    #[error("Controller has dropped the receiver")]
-    MessageSendError,
+    #[error("Controller has shut down.")]
+    ControllerOffline,
     /// If the controller panics formulation a response
     #[error("Controller has dropped the response sender")]
     MessageRecvError,
@@ -21,4 +21,10 @@ pub enum Error {
     /// Zone does not exist
     #[error("The requested zone name is not valid")]
     ZoneDoesNotExist,
+    /// Error encountered on zone action
+    #[error("Error encountered performing zone action")]
+    ZoneActionError,
+    /// Could not parse content
+    #[error("Could not find the requested content")]
+    ContentNotFound,
 }

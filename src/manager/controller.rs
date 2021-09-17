@@ -2,7 +2,7 @@
 
 //! API backend for tracking sonos system topology
 
-use super::{subscriber::Subscriber, Command, Error::*, *};
+use super::{subscriber::Subscriber, Command, *};
 use crate::{
     discover_one, manager::ZoneAction, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY,
     Service, Speaker, SpeakerInfo, Uri, URN,
@@ -32,7 +32,7 @@ impl SpeakerData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// The manager owns the Speakers and keeps track of the topology
 /// so it can perform actions using the appropriate coordinating speakers.
 pub(super) struct Controller {
@@ -40,20 +40,20 @@ pub(super) struct Controller {
     topology: ReducedTopology,
     topology_subscription: Subscriber,
     queued_event_handles: Vec<EventReceiver>,
-    tx_rx: (CmdSender, CmdReceiver),
+    rx: Option<CmdReceiver>,
 }
 
-impl Default for Controller {
-    fn default() -> Self {
-        Self {
-            speakerdata: Default::default(),
-            topology: Default::default(),
-            topology_subscription: Default::default(),
-            queued_event_handles: Default::default(),
-            tx_rx: mpsc::channel(32),
-        }
-    }
-}
+// impl Default for Controller {
+//     fn default() -> Self {
+//         Self {
+//             speakerdata: Default::default(),
+//             topology: Default::default(),
+//             topology_subscription: Default::default(),
+//             queued_event_handles: Default::default(),
+//             tx_rx: mpsc::channel(32),
+//         }
+//     }
+// }
 
 impl Controller {
     /// Get a controller.
@@ -65,12 +65,18 @@ impl Controller {
     ///     * Discover speakers and topology
     ///     * Return Sender for sending commands
     pub async fn init(&mut self) -> Result<CmdSender> {
+        self.discover_system().await?;
+        let (tx, rx) = mpsc::channel(32);
+        self.rx = Some(rx);
+        Ok(tx)
+    }
+
+    async fn discover_system(&mut self) -> Result<()> {
         let speaker = discover_one(Duration::from_secs(5)).await?;
         self.update_from_topology(speaker._zone_group_state().await?.into_iter().collect())
             .await
             .unwrap_or_else(|err| warn!("Error updating system topology: {:?}", err));
-
-        Ok(self.tx_rx.0.clone())
+        Ok(())
     }
 
     /// Get a reference to the vector of speakers.
@@ -189,6 +195,9 @@ impl Controller {
             .map(|service| (service.clone(), speaker.device.url().clone()))
     }
 
+    /// Handle events. Deal with errors here. Only return an error if it is
+    /// unrecoverable and should break the non-event loop, e.g. all speakers
+    /// offline.
     async fn handle_event(&mut self, event: Event) -> Result<()> {
         use Event::*;
         match event {
@@ -250,7 +259,7 @@ impl Controller {
                                     err
                                 );
                                 log::warn!("  ...attempting to rediscover system");
-                                self.init().await.map(|_| ())?;
+                                self.discover_system().await.map(|_| ())?;
                                 log::warn!("  ...success!");
                             }
                         }
@@ -301,15 +310,20 @@ impl Controller {
         log::debug!("Got {:?}", action);
         match action {
             // TODO: use cached state to find track number
-            PlayNow { uri, metadata } => {
+            PlayNow(media) => {
                 if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to set {} transport to {}", name, uri);
-                    if coordinator
-                        .set_transport_uri(&uri, &metadata)
-                        .await
-                        .and(coordinator.play().await)
-                        .is_ok()
-                    {
+                    log::debug!("Attempting to set {} transport to {:?}", name, media);
+                    match media.play_now(coordinator).await {
+                        Ok(_) => {tx.send(Response::Ok).unwrap_or(()); return Ok(());},
+                        Err(e) => log::warn!("Error: {}", e)
+                    }
+                }
+                tx.send(Response::NotOk).unwrap_or(())
+            }
+            AddToQueue(media) => {
+                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
+                    log::debug!("Attempting to set {} transport to {:?}", name, media);
+                    if media.add_to_queue(coordinator).await.is_ok() {
                         tx.send(Response::Ok).unwrap_or(());
                         return Ok(());
                     }
@@ -321,7 +335,15 @@ impl Controller {
                 //     _ => 0 // Not sure about this
                 // };
             }
-
+            ClearQueue => {
+                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
+                    log::debug!("Attempting to clear queue on {}", name);
+                    match coordinator.clear_queue().await {
+                        Ok(_) => tx.send(Response::Ok).unwrap_or(()),
+                        _ => tx.send(Response::NotOk).unwrap_or(()),
+                    }
+                }
+            }
             Exists => {
                 if self.speakerdata.iter().any(|s| s.speaker.info.name == name) {
                     tx.send(Response::Ok).unwrap_or(());
@@ -329,7 +351,6 @@ impl Controller {
                     tx.send(Response::NotOk).unwrap_or(());
                 }
             }
-
             Pause => {
                 if let Some(coordinator) = self.get_coordinator_for_name(&name) {
                     log::debug!("Attempting to pause on {}", name);
@@ -339,7 +360,6 @@ impl Controller {
                     }
                 }
             }
-
             TakeSnapshot => {
                 if let Some(coordinator) = self.get_coordinator_for_name(&name) {
                     log::debug!("Attempting to take a snapshot on {}", name);
@@ -351,7 +371,6 @@ impl Controller {
                     tx.send(Response::NotOk).unwrap_or(())
                 }
             }
-
             ApplySnapshot(snapshot) => {
                 if let Some(coordinator) = self.get_coordinator_for_name(&name) {
                     log::debug!("Attempting to apply a snapshot on {}", name);
@@ -361,28 +380,38 @@ impl Controller {
                     };
                 }
             }
+            GetQueue => todo!(),
         }
         Ok(())
     }
 
     /// Run the event loop.
+    ///
     ///     * Subscribe and listen to events on the sonos system
-    ///     * Keep system state up-to-date
-    ///     * Listen for commands from clients to perform actions on zones
+    ///     * Keep system state up-to-date 
+    ///     * Listen for commands from clients to perform actions on zones.
+    ///
+    /// Will return an error if system goes offline.
+    ///
+    /// Whether this function returns an error or not, the reciever will drop
+    /// and the controller will need to be re-initialized.
+
     pub async fn run(&mut self) -> Result<()> {
         use Command::*;
 
         let mut event_stream = SelectAll::new();
         // Subscribe for topology updates. Any device will do.
         let (service, url) = self.get_a_service_and_url(ZONE_GROUP_TOPOLOGY)?;
-        let rx = self.topology_subscription.subscribe(service, url, None)?;
-        event_stream.push(WatchStream::new(rx));
+        let topo_rx = self.topology_subscription.subscribe(service, url, None)?;
+        event_stream.push(WatchStream::new(topo_rx));
+
+        let mut rx = self.rx.take().ok_or(ControllerNotInitialized)?;
 
         debug!("Listening for commands");
         loop {
             event_stream.extend(self.queued_event_handles.drain(..).map(WatchStream::new));
             select! {
-                maybe_command = self.tx_rx.1.recv() => match maybe_command {
+                maybe_command = rx.recv() => match maybe_command {
                     Some(cmd) => match cmd {
                         DoZoneAction(tx, name, action) => self.handle_zone_action(tx, name, action).await?,
                     },
@@ -390,11 +419,12 @@ impl Controller {
                 },
                 maybe_event = event_stream.next() => match maybe_event {
                     Some(event) => self.handle_event(event).await?,
-                    None => log::warn!("No active subscriptions... all devices unreachable?"),
+                    None => warn!("No active subscriptions... all devices unreachable?"),
                 }
             }
         }
-
+        // put reciever back if we exit gracefully? 
+        // self.rx = Some(rx);
         debug!("aborting");
         // self.topology_subscription.shutdown().await
         Ok(())

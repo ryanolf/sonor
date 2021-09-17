@@ -1,9 +1,4 @@
-use crate::{
-    args,
-    track::{Track, TrackInfo},
-    utils::{self, HashMapExt},
-    Error, RepeatMode, Result, Snapshot, SpeakerInfo,
-};
+use crate::{Error, RepeatMode, Result, Snapshot, SpeakerInfo, args, content::Content, track::{Track, TrackInfo}, utils::{self, HashMapExt}};
 
 use roxmltree::{Document, Node};
 use rupnp::{ssdp::URN, Device};
@@ -14,6 +9,7 @@ pub(crate) const SONOS_URN: URN = URN::device("schemas-upnp-org", "ZonePlayer", 
 pub(crate) const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
 const DEVICE_PROPERTIES: &URN = &URN::service("schemas-upnp-org", "DeviceProperties", 1);
 const RENDERING_CONTROL: &URN = &URN::service("schemas-upnp-org", "RenderingControl", 1);
+const CONTENT_DIRECTORY: &URN = &URN::service("schemas-upnp-org", "ContentDirectory", 1);
 pub(crate) const ZONE_GROUP_TOPOLOGY: &URN =
     &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
 const QUEUE: &URN = &URN::service("schemas-sonos-com", "Queue", 1);
@@ -374,8 +370,8 @@ impl Speaker {
     }
 
     /// Enqueues a track as the next one.
-    pub async fn queue_next(&self, uri: &str, metadata: &str) -> Result<()> {
-        let args = args! { "InstanceID": 0, "EnqueuedURI": uri, "EnqueuedURIMetaData": metadata, "DesiredFirstTrackNumberEnqueued": 0, "EnqueueAsNext": 1 };
+    pub async fn queue_next(&self, uri: &str, metadata: &str, track_no: Option<u32>) -> Result<()> {
+        let args = args! { "InstanceID": 0, "EnqueuedURI": uri, "EnqueuedURIMetaData": metadata, "DesiredFirstTrackNumberEnqueued": track_no.unwrap_or(0), "EnqueueAsNext": 1 };
         self.action(AV_TRANSPORT, "AddURIToQueue", args)
             .await
             .map(drop)
@@ -493,6 +489,24 @@ impl Speaker {
             .collect::<Result<_, _>>()?;
 
         Ok((available_services, services))
+    }
+
+    pub async fn browse(&self, object_id: &str, start: u32, limit: u32) -> Result<Vec<Content>> {
+        let args = args! { "ObjectID": object_id, "BrowseFlag": "BrowseDirectChildren", "StartingIndex": start, "RequestedCount": limit, "Filter" : "", "SortCriteria" : "" };
+        let result = self
+            .action(CONTENT_DIRECTORY, "Browse", args)
+            .await?
+            .extract("Result")?;
+        // log::debug!("{:#?}", result);
+    
+            Document::parse(&result)?
+                .root()
+                .first_element_child()
+                .ok_or_else(|| rupnp::Error::ParseError("Browse Response contains no children"))?
+                .children()
+                .filter(roxmltree::Node::is_element)
+                .map(Content::from_xml)
+                .collect()
     }
 
     /// Take a snapshot of the state the speaker is in right now.
