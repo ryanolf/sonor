@@ -66,7 +66,7 @@ impl<'a> Zone<'a> {
     action!(pause: Pause => Ok(__: ()));
     action!(take_snapshot: TakeSnapshot => Snapshot(snap: Snapshot));
     action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
-    action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
+    // action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
 }
 
 impl Manager {
