@@ -1,4 +1,4 @@
-use super::{metadata::*, Error::{self, *}, Result};
+use super::{metadata::*, Error::{self, *}, Result, SpeakerData};
 use crate::Speaker;
 use xml::escape::escape_str_pcdata;
 
@@ -33,17 +33,24 @@ impl MediaSource {
                 log::debug!("Found favorite {:?}", favorite);
                 Some((favorite.uri()?.into(), escape_str_pcdata(favorite.metadata()?).into()))
             }
-            _ => None,
         }
     }
 
     /// Add the media to the end of the queue.
-    pub async fn add_to_queue(&self, coordinator: &Speaker) -> Result<()> {
-        let (uri, metadata) = self.get_uri_and_metadata(coordinator).await.ok_or(ContentNotFound)?;
-        coordinator.queue_end(&uri, &metadata).await.map_err(Error::from)
+    pub(crate) async fn queue_as_next(&self, coordinator_data: &SpeakerData) -> Result<()> {
+        let SpeakerData {speaker, transport_data, ..} = &coordinator_data;
+        // Look for current track number in transport_data, otherwise fetch it
+        let cur_track_no = match transport_data.iter().find_map(|(k, v)| {k.eq_ignore_ascii_case("CurrentTrack"); Some(v)}) {
+            Some(track_no) => track_no.parse().map_err(|_| Error::ContentNotFound)?,
+            None => speaker.track().await?.map(|t| t.track_no()).unwrap_or(0),
+        };
+        let (uri, metadata) = self.get_uri_and_metadata(speaker).await.ok_or(ContentNotFound)?;
+        speaker.queue_next(&uri, &metadata, Some(cur_track_no+1)).await?;
+        Ok(())
     }
     /// Replace what is playing with this
-    pub async fn play_now(&self, coordinator: &Speaker) -> Result<()> {
+    pub(crate) async fn play_now(&self, coordinator_data: &SpeakerData) -> Result<()> {
+        let coordinator = &coordinator_data.speaker;
         let (uri, metadata) = self.get_uri_and_metadata(coordinator).await.ok_or(ContentNotFound)?;
         coordinator.clear_queue().await?;
         coordinator.queue_next(&uri, &metadata, Some(0)).await?;

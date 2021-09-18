@@ -9,7 +9,7 @@ async fn main() -> Result<(), manager::Error> {
 
     let manager = Manager::new().await?;
 
-    let zone = manager.get_zone("Living Room").await?;
+    let zone = manager.get_zone("Master Bedroom").await?;
     // let snapshot = zone.take_snapshot().await?;
     // zone.clear_queue().await?;
     // zone.play_now(Apple("librarytrack:a.1442979904".into())).await?;
@@ -17,9 +17,10 @@ async fn main() -> Result<(), manager::Error> {
     // zone.play_now(Spotify("track:4LI1ykYGFCcXPWkrpcU7hn".into())).await?;
     // zone.play_now(Spotify("album:4hW2wvP51Myt7UIVTgSp4f".into())).await?;
     // zone.play_now(Spotify("user:spotify:playlist:32O0SSXDNWDrMievPkV0Im".into())).await?;
-    // zone.play_now(Apple("album:1025210938".into())).await?;
-    zone.play_now(SonosFavorite("New York Rhapsody".into())).await?;
+    zone.play_now(Apple("album:1025210938".into())).await?;
+    // zone.play_now(SonosFavorite("New York Rhapsody".into())).await?;
     sleep(Duration::from_secs(10)).await;
+    zone.next
     // zone.play_now(SonosPlaylist("Cars 1, 2, 3".into())).await?;
     // zone.pause().await?;
     // zone.apply_snapshot(snapshot).await?;
