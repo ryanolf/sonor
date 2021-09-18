@@ -70,7 +70,6 @@ pub use snapshot::Snapshot;
 pub use speaker::Speaker;
 use thiserror::*;
 pub use track::{Track, TrackInfo};
-pub(crate) use content::Content;
 
 /// Represents an error encountered by Sonor
 #[derive(Error, Debug)]

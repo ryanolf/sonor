@@ -15,9 +15,12 @@ mod test;
 pub use types::*;
 pub use error::Error;
 pub use mediasource::MediaSource;
+pub use controller::ZoneAction;
+pub(crate) use controller::SpeakerData;
 
-use self::{Error::*, ZoneAction::*, controller::Controller};
+use self::{Error::*, controller::Controller};
 use crate::Snapshot;
+use controller::ZoneAction::*;
 
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -34,11 +37,10 @@ pub struct Zone<'a> {
 }
 
 macro_rules! action {
-    ($fn:ident: $action:ident$(($invar:ident: $intyp:ty))? => $resp:ident$(($outvar:ident: $outtyp:ty))?) => {
-        #[allow(unused_parens)]
-        pub async fn $fn(&self$(, $invar: $intyp)?) -> Result<($($outtyp)?)>{
+    ($fn:ident: $action:ident$(($invar:ident: $intyp:ty))? => $resp:ident($outvar:ident: $outtyp:ty)) => {
+        pub async fn $fn(&self$(, $invar: $intyp)?) -> Result<$outtyp>{
             match self.action($action$(($invar))?).await? {
-                Response::$resp$(($outvar))? => Ok(($($outvar)?)),
+                Response::$resp($outvar) => Ok($outvar),
                 _ => Err(ZoneActionError)
             }
         }
@@ -58,12 +60,13 @@ impl<'a> Zone<'a> {
         rx.await.map_err(|_| MessageRecvError)
     }
 
-    action!(play_now: PlayNow(media: MediaSource) => Ok);
-    action!(add_to_queue: AddToQueue(media: MediaSource) => Ok);
-    action!(clear_queue: ClearQueue => Ok);
-    action!(pause: Pause => Ok);
+    action!(play_now: PlayNow(media: MediaSource) => Ok(__: ()));
+    action!(queue_as_next: QueueAsNext(media: MediaSource) => Ok(__: ()));
+    action!(clear_queue: ClearQueue => Ok(__: ()));
+    action!(pause: Pause => Ok(__: ()));
     action!(take_snapshot: TakeSnapshot => Snapshot(snap: Snapshot));
-    action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok);
+    action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
+    action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
 }
 
 impl Manager {
@@ -96,7 +99,7 @@ impl Manager {
             name: zone_name.to_string(),
         };
         match zone.action(Exists).await? {
-            Response::Ok => Ok(zone),
+            Response::Ok(_) => Ok(zone),
             _ => Err(ZoneDoesNotExist),
         }
     }

@@ -1,20 +1,8 @@
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{Snapshot, SpeakerInfo, URN};
+use crate::{Snapshot, SpeakerInfo, URN, Track};
 
-use super::{Error, mediasource::MediaSource};
-
-#[derive(Debug)]
-pub enum ZoneAction {
-    Exists,
-    PlayNow(MediaSource),
-    AddToQueue(MediaSource),
-    Pause,
-    TakeSnapshot,
-    ClearQueue,
-    ApplySnapshot(Snapshot),
-    GetQueue
-}
+use super::{Error, controller::ZoneAction};
 
 #[derive(Debug)]
 pub(super) enum Command {
@@ -23,9 +11,10 @@ pub(super) enum Command {
 
 #[derive(Debug)]
 pub enum Response {
-    Ok,
+    Ok(()),
     NotOk,
     Snapshot(Snapshot),
+    Queue(Vec<Track>)
 }
 
 #[derive(Debug, Clone)]

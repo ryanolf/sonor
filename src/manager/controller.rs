@@ -2,9 +2,12 @@
 
 //! API backend for tracking sonos system topology
 
+mod zoneaction;
+pub use zoneaction::ZoneAction;
+
 use super::{subscriber::Subscriber, Command, *};
 use crate::{
-    discover_one, manager::ZoneAction, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY,
+    discover_one, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY,
     Service, Speaker, SpeakerInfo, Uri, URN,
 };
 use futures_util::stream::{SelectAll, StreamExt};
@@ -16,10 +19,10 @@ use tokio_stream::wrappers::WatchStream;
 type CmdReceiver = mpsc::Receiver<Command>;
 
 #[derive(Debug)]
-struct SpeakerData {
-    speaker: Speaker,
+pub(crate) struct SpeakerData {
+    pub(crate) speaker: Speaker,
     transport_subscription: Option<Subscriber>,
-    transport_data: AVStatus,
+    pub(crate) transport_data: AVStatus,
 }
 
 impl SpeakerData {
@@ -42,18 +45,6 @@ pub(super) struct Controller {
     queued_event_handles: Vec<EventReceiver>,
     rx: Option<CmdReceiver>,
 }
-
-// impl Default for Controller {
-//     fn default() -> Self {
-//         Self {
-//             speakerdata: Default::default(),
-//             topology: Default::default(),
-//             topology_subscription: Default::default(),
-//             queued_event_handles: Default::default(),
-//             tx_rx: mpsc::channel(32),
-//         }
-//     }
-// }
 
 impl Controller {
     /// Get a controller.
@@ -306,83 +297,9 @@ impl Controller {
         name: String,
         action: ZoneAction,
     ) -> Result<()> {
-        use ZoneAction::*;
-        log::debug!("Got {:?}", action);
-        match action {
-            // TODO: use cached state to find track number
-            PlayNow(media) => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to set {} transport to {:?}", name, media);
-                    match media.play_now(coordinator).await {
-                        Ok(_) => {tx.send(Response::Ok).unwrap_or(()); return Ok(());},
-                        Err(e) => log::warn!("Error: {}", e)
-                    }
-                }
-                tx.send(Response::NotOk).unwrap_or(())
-            }
-            AddToQueue(media) => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to set {} transport to {:?}", name, media);
-                    if media.add_to_queue(coordinator).await.is_ok() {
-                        tx.send(Response::Ok).unwrap_or(());
-                        return Ok(());
-                    }
-                }
-                tx.send(Response::NotOk).unwrap_or(())
 
-                // let track_no = match coordinator.track().await? {
-                //     Some(TrackInfo{track_no, ..}) => track_no,
-                //     _ => 0 // Not sure about this
-                // };
-            }
-            ClearQueue => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to clear queue on {}", name);
-                    match coordinator.clear_queue().await {
-                        Ok(_) => tx.send(Response::Ok).unwrap_or(()),
-                        _ => tx.send(Response::NotOk).unwrap_or(()),
-                    }
-                }
-            }
-            Exists => {
-                if self.speakerdata.iter().any(|s| s.speaker.info.name == name) {
-                    tx.send(Response::Ok).unwrap_or(());
-                } else {
-                    tx.send(Response::NotOk).unwrap_or(());
-                }
-            }
-            Pause => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to pause on {}", name);
-                    match coordinator.pause().await {
-                        Ok(_) => tx.send(Response::Ok).unwrap_or(()),
-                        _ => tx.send(Response::NotOk).unwrap_or(()),
-                    }
-                }
-            }
-            TakeSnapshot => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to take a snapshot on {}", name);
-                    match coordinator.snapshot().await {
-                        Ok(snapshot) => tx.send(Response::Snapshot(snapshot)).unwrap_or(()),
-                        _ => tx.send(Response::NotOk).unwrap_or(()),
-                    }
-                } else {
-                    tx.send(Response::NotOk).unwrap_or(())
-                }
-            }
-            ApplySnapshot(snapshot) => {
-                if let Some(coordinator) = self.get_coordinator_for_name(&name) {
-                    log::debug!("Attempting to apply a snapshot on {}", name);
-                    match coordinator.apply(snapshot).await {
-                        Ok(_) => tx.send(Response::Ok).unwrap_or(()),
-                        _ => tx.send(Response::NotOk).unwrap_or(()),
-                    };
-                }
-            }
-            GetQueue => todo!(),
-        }
-        Ok(())
+        debug!("Got {:?}", action);
+        action.handle_action(&self, tx, name).await
     }
 
     /// Run the event loop.
@@ -448,6 +365,12 @@ impl Controller {
             })
     }
 
+    fn get_speakerdata_by_uuid(&self, uuid: &str) -> Option<&SpeakerData> {
+        self.speakerdata
+            .iter()
+            .find(|s| s.speaker.info.uuid().eq_ignore_ascii_case(uuid))
+    }
+
     fn pop_speakerdata_by_uuid(&mut self, uuid: &str) -> Option<SpeakerData> {
         self.speakerdata
             .iter()
@@ -460,6 +383,11 @@ impl Controller {
         self.get_coordinator_for_uuid(speaker.uuid())
     }
 
+    fn get_coordinatordata_for_name(&self, name: &str) -> Option<&SpeakerData> {
+        let speaker = self.get_speaker_with_name(name)?;
+        self.get_coordinatordata_for_uuid(speaker.uuid())
+    }
+
     fn get_coordinator_for_uuid(&self, speaker_uuid: &str) -> Option<&Speaker> {
         let coordinator_uuid = self.topology.iter().find_map(|(coordinator_uuid, uuids)| {
             uuids
@@ -468,6 +396,16 @@ impl Controller {
                 .and(Some(coordinator_uuid))
         })?;
         self.get_speaker_by_uuid(coordinator_uuid)
+    }
+
+    fn get_coordinatordata_for_uuid(&self, speaker_uuid: &str) -> Option<&SpeakerData> {
+        let coordinator_uuid = self.topology.iter().find_map(|(coordinator_uuid, uuids)| {
+            uuids
+                .iter()
+                .find(|&uuid| uuid.eq_ignore_ascii_case(speaker_uuid))
+                .and(Some(coordinator_uuid))
+        })?;
+        self.get_speakerdata_by_uuid(coordinator_uuid)
     }
 
     fn update_avtransport_data(&mut self, uuid: Uuid, data: Vec<(String, String)>) {
