@@ -9,18 +9,18 @@ mod metadata;
 mod error;
 mod subscriber;
 mod types;
-use types::{Command, Response};
+
+#[cfg(test)]
 mod test;
 
-pub use types::*;
+use types::{Command, Response, CmdSender};
+use controller::{SpeakerData, Controller};
+use crate::{Snapshot, Track};
+
+pub(self) use types::Result;
 pub use error::Error;
 pub use mediasource::MediaSource;
-pub use controller::ZoneAction;
-pub(crate) use controller::SpeakerData;
-
-use self::{Error::*, controller::Controller};
-use crate::Snapshot;
-use controller::ZoneAction::*;
+pub(self) use controller::ZoneAction;
 
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -39,9 +39,10 @@ pub struct Zone<'a> {
 macro_rules! action {
     ($fn:ident: $action:ident$(($invar:ident: $intyp:ty))? => $resp:ident($outvar:ident: $outtyp:ty)) => {
         pub async fn $fn(&self$(, $invar: $intyp)?) -> Result<$outtyp>{
+            use ZoneAction::*;
             match self.action($action$(($invar))?).await? {
                 Response::$resp($outvar) => Ok($outvar),
-                _ => Err(ZoneActionError)
+                _ => Err(Error::ZoneActionError)
             }
         }
     };
@@ -53,20 +54,28 @@ impl<'a> Zone<'a> {
         self.manager
             .tx
             .as_ref()
-            .ok_or(ControllerNotInitialized)?
+            .ok_or(Error::ControllerNotInitialized)?
             .send(Command::DoZoneAction(tx, self.name.clone(), action))
             .await
-            .map_err(|_| ControllerOffline)?;
-        rx.await.map_err(|_| MessageRecvError)
+            .map_err(|_| Error::ControllerOffline)?;
+        rx.await.map_err(|_| Error::MessageRecvError)
     }
 
     action!(play_now: PlayNow(media: MediaSource) => Ok(__: ()));
     action!(queue_as_next: QueueAsNext(media: MediaSource) => Ok(__: ()));
-    action!(clear_queue: ClearQueue => Ok(__: ()));
     action!(pause: Pause => Ok(__: ()));
+    action!(next_track: NextTrack => Ok(__: ()));
+    action!(previous_track: PreviousTrack => Ok(__: ()));
+    action!(seek_time: SeekTime(seconds: u32) => Ok(__: ()));
+    action!(seek_track: SeekTrack(seconds: u32) => Ok(__: ()));
+    action!(seek_rel_track: SeekRelTrack(number: u32) => Ok(__: ()));
+    action!(set_repeat: SetRepeat(mode: crate::RepeatMode) => Ok(__: ()));
+    action!(set_shuffle: SetShuffle(state: bool) => Ok(__: ()));
+    action!(clear_queue: ClearQueue => Ok(__: ()));
+    action!(get_queue: GetQueue => Queue(queue: Vec<Track>));
     action!(take_snapshot: TakeSnapshot => Snapshot(snap: Snapshot));
     action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
-    // action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
+
 }
 
 impl Manager {
@@ -98,9 +107,9 @@ impl Manager {
             manager: self,
             name: zone_name.to_string(),
         };
-        match zone.action(Exists).await? {
+        match zone.action(ZoneAction::Exists).await? {
             Response::Ok(_) => Ok(zone),
-            _ => Err(ZoneDoesNotExist),
+            _ => Err(Error::ZoneDoesNotExist),
         }
     }
 }

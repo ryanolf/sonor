@@ -1,12 +1,15 @@
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{Snapshot, SpeakerInfo, URN, Track};
+use crate::{Snapshot, SpeakerInfo, Track, URN};
 
-use super::{Error, controller::ZoneAction};
+use super::{Error, ZoneAction};
 
 #[derive(Debug)]
 pub(super) enum Command {
     DoZoneAction(Responder, ZoneName, ZoneAction),
+    // Browse or search media
+    // Subscribe to events
+    // Management of controller?
 }
 
 #[derive(Debug)]

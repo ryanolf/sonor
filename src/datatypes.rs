@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{Result, Speaker};
 use roxmltree::Node;
 use std::{
     cmp::PartialEq,
@@ -19,6 +19,12 @@ pub enum RepeatMode {
 impl std::default::Default for RepeatMode {
     fn default() -> Self {
         RepeatMode::None
+    }
+}
+
+impl RepeatMode {
+    pub(crate) async fn set(self, speaker: &Speaker) -> Result<()> {
+        speaker.set_repeat_mode(self).await
     }
 }
 
