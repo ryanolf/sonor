@@ -1,7 +1,7 @@
-#![allow(indirect_structural_match, missing_docs)]
+#![allow(missing_docs)]
 
 use crate::speaker::{
-    extract_av_transport_last_change, extract_zone_topology, AV_TRANSPORT, ZONE_GROUP_TOPOLOGY,
+    extract_av_transport_last_change, extract_zone_topology, AV_TRANSPORT,
 };
 
 use futures_util::stream::StreamExt;
@@ -98,8 +98,8 @@ impl Subscriber {
                 // due to no more subscribers, and resubscription timer
                 tokio::select! {
                     maybe_state_vars = &mut stream.next() => match maybe_state_vars {
-                        Some(Ok(mut state_vars)) => match service_type {
-                            ZONE_GROUP_TOPOLOGY => {
+                        Some(Ok(mut state_vars)) => match service_type.typ() {
+                            "ZoneGroupTopology" => {
                                 state_vars
                                     .remove("ZoneGroupState")
                                     .and_then(|xml| extract_zone_topology(&xml)
@@ -107,7 +107,7 @@ impl Subscriber {
                                         .ok())
                                     .and_then(|topology| tx.send(TopoUpdate(uuid.clone(), topology)).ok());
                             }
-                            AV_TRANSPORT => {
+                            "AVTransport" => {
                                 state_vars
                                     .remove("LastChange")
                                     .and_then(|xml| extract_av_transport_last_change(&xml)
