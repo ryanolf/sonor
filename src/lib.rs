@@ -62,7 +62,6 @@ mod track;
 mod content;
 mod utils;
 
-pub use manager::{Manager, Zone};
 pub use datatypes::{RepeatMode, SpeakerInfo};
 pub use discovery::{discover, discover_one, find};
 pub use rupnp::{self, http::Uri, ssdp::URN, Service};

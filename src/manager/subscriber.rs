@@ -1,10 +1,7 @@
 #![allow(indirect_structural_match, missing_docs)]
 
-use crate::{
-    speaker::{
-        extract_av_transport_last_change, extract_zone_topology, AV_TRANSPORT, ZONE_GROUP_TOPOLOGY,
-    },
-    Error,
+use crate::speaker::{
+    extract_av_transport_last_change, extract_zone_topology, AV_TRANSPORT, ZONE_GROUP_TOPOLOGY,
 };
 
 use futures_util::stream::StreamExt;
@@ -13,7 +10,11 @@ use log::{debug, error, info, warn};
 use std::time::Duration;
 use tokio::{self, sync::watch, task::JoinHandle, time};
 
-use super::{Event, EventReceiver, Result, Uuid, Error::*};
+use super::{
+    types::{Event, EventReceiver, Uuid},
+    Error::SubscriberError,
+    Result,
+};
 
 const TIMEOUT_SEC: u32 = 300;
 const RENEW_SEC: u32 = 60;
@@ -24,7 +25,6 @@ type Sender = tokio::sync::watch::Sender<Event>;
 pub(super) struct Subscriber {
     service: Option<rupnp::Service>,
     url: Option<http::Uri>,
-    sid: Option<String>,
     pub(crate) uuid: Option<Uuid>,
     task_handle: Option<JoinHandle<Result<Sender>>>,
 }
@@ -90,7 +90,7 @@ impl Subscriber {
                 service.subscribe(&url, TIMEOUT_SEC).await.map_err(|err| {
                     tx.send(SubscribeError(uuid.clone(), service_type.to_owned()))
                         .ok();
-                    Error::UPnP(err)
+                    crate::Error::UPnP(err)
                 })?;
             let mut interval = time::interval(Duration::from_millis((RENEW_SEC * 1000).into()));
             loop {
@@ -125,7 +125,7 @@ impl Subscriber {
                                 .await
                                 .map_err(|err| {
                                     tx.send(SubscribeError(uuid.clone(), service_type.to_owned())).ok();
-                                    Error::UPnP(err)})?;
+                                    crate::Error::UPnP(err)})?;
                             sid = new_sub.0;
                             stream = new_sub.1;
                         }
@@ -135,7 +135,7 @@ impl Subscriber {
                                 .await
                                 .map_err(|err| {
                                     tx.send(SubscribeError(uuid.clone(), service_type.to_owned())).ok();
-                                    Error::UPnP(err)})?;
+                                    crate::Error::UPnP(err)})?;
                             sid = new_sub.0;
                             stream = new_sub.1;
                         }
@@ -149,10 +149,10 @@ impl Subscriber {
                         let uuid = uuid.to_owned();
                         debug!("Attempting resubscribe to {} on {}...", service_type.typ(), uuid.as_deref().unwrap_or("unknown UUID"));
                         if let Err(err) = service.renew_subscription(&url, &sid, TIMEOUT_SEC).await {
-                            info!("{} while resubscribing. Attempting new subscription", Error::UPnP(err));
+                            info!("{} while resubscribing. Attempting new subscription", crate::Error::UPnP(err));
                             let new_sub = service.subscribe(&url, TIMEOUT_SEC).await.map_err(|err| {
                                 tx.send(SubscribeError(uuid, service_type.to_owned())).ok();
-                                Error::UPnP(err)})?;
+                                crate::Error::UPnP(err)})?;
                             sid = new_sub.0;
                             stream = new_sub.1;
                         } else {

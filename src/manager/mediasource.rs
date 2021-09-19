@@ -1,4 +1,4 @@
-use super::{metadata::*, Error::{self, *}, Result, SpeakerData};
+use super::{Error, Result, SpeakerData, metadata::{apple_uri_and_metadata, spotify_uri_and_metadata}};
 use crate::Speaker;
 use xml::escape::escape_str_pcdata;
 
@@ -31,27 +31,41 @@ impl MediaSource {
                     .iter()
                     .find(|&f| f.title().eq_ignore_ascii_case(item))?;
                 log::debug!("Found favorite {:?}", favorite);
-                Some((favorite.uri()?.into(), escape_str_pcdata(favorite.metadata()?).into()))
+                Some((
+                    favorite.uri()?.into(),
+                    escape_str_pcdata(favorite.metadata()?).into(),
+                ))
             }
         }
     }
 
     /// Add the media to the end of the queue.
     pub(crate) async fn queue_as_next(&self, coordinator_data: &SpeakerData) -> Result<()> {
-        let SpeakerData {speaker, transport_data, ..} = &coordinator_data;
-        // Look for current track number in transport_data, otherwise fetch it
-        let cur_track_no = match transport_data.iter().find_map(|(k, v)| {k.eq_ignore_ascii_case("CurrentTrack"); Some(v)}) {
-            Some(track_no) => track_no.parse().map_err(|_| Error::ContentNotFound)?,
-            None => speaker.track().await?.map(|t| t.track_no()).unwrap_or(0),
-        };
-        let (uri, metadata) = self.get_uri_and_metadata(speaker).await.ok_or(ContentNotFound)?;
-        speaker.queue_next(&uri, &metadata, Some(cur_track_no+1)).await?;
+        let speaker = &coordinator_data.speaker;
+        let cur_track_no = coordinator_data
+            .get_current_track_no()
+            .await
+            .map_err(|err| {
+                log::warn!("Error determining track number: {}", err);
+                err
+            })
+            .unwrap_or(0);
+        let (uri, metadata) = self
+            .get_uri_and_metadata(speaker)
+            .await
+            .ok_or(Error::ContentNotFound)?;
+        speaker
+            .queue_next(&uri, &metadata, Some(cur_track_no + 1))
+            .await?;
         Ok(())
     }
     /// Replace what is playing with this
     pub(crate) async fn play_now(&self, coordinator_data: &SpeakerData) -> Result<()> {
         let coordinator = &coordinator_data.speaker;
-        let (uri, metadata) = self.get_uri_and_metadata(coordinator).await.ok_or(ContentNotFound)?;
+        let (uri, metadata) = self
+            .get_uri_and_metadata(coordinator)
+            .await
+            .ok_or(Error::ContentNotFound)?;
         coordinator.clear_queue().await?;
         coordinator.queue_next(&uri, &metadata, Some(0)).await?;
         // Turn on queue mode

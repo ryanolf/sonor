@@ -1,20 +1,27 @@
-#![allow(missing_docs, indirect_structural_match)]
+#![allow(missing_docs)]
 
 //! API backend for tracking sonos system topology
 
 mod zoneaction;
-pub use zoneaction::ZoneAction;
 
-use super::{subscriber::Subscriber, Command, *};
+use super::{
+    subscriber::Subscriber,
+    types::{
+        AVStatus, CmdSender, Event, EventReceiver, ReducedTopology, Responder, Topology, Uuid,
+    },
+    Command, Error, Result,
+};
 use crate::{
-    discover_one, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY,
-    Service, Speaker, SpeakerInfo, Uri, URN,
+    discover_one, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY, Service, Speaker,
+    SpeakerInfo, Uri, URN,
 };
 use futures_util::stream::{SelectAll, StreamExt};
 use log::{debug, warn};
-use std::{time::Duration};
+use std::time::Duration;
 use tokio::{select, sync::mpsc};
 use tokio_stream::wrappers::WatchStream;
+
+pub use zoneaction::ZoneAction;
 
 type CmdReceiver = mpsc::Receiver<Command>;
 
@@ -31,6 +38,23 @@ impl SpeakerData {
             speaker,
             transport_data: Default::default(),
             transport_subscription: Default::default(),
+        }
+    }
+
+    /// Get the current track number for this speaker. Take value from cache if
+    /// available, otherwise ask for it.
+    pub(crate) async fn get_current_track_no(&self) -> Result<u32> {
+        match self.transport_data.iter().find_map(|(k, v)| {
+            k.eq_ignore_ascii_case("CurrentTrack");
+            Some(v)
+        }) {
+            Some(track_no) => track_no.parse().map_err(|_| Error::ContentNotFound),
+            None => self
+                .speaker
+                .track()
+                .await
+                .map(|o| o.map(|t| t.track_no()).unwrap_or(0))
+                .map_err(Error::from),
         }
     }
 }
@@ -171,7 +195,7 @@ impl Controller {
             let i = fastrand::usize(..self.speakerdata.len());
             speaker = &self.speakerdata.get(i).unwrap().speaker;
         } else {
-            return Err(Sonor(crate::Error::NoSpeakersDetected));
+            return Err(crate::Error::NoSpeakersDetected.into());
         }
 
         speaker
@@ -182,7 +206,7 @@ impl Controller {
                 action: String::new(),
                 payload: String::new(),
             })
-            .map_err(Sonor)
+            .map_err(Error::from)
             .map(|service| (service.clone(), speaker.device.url().clone()))
     }
 
@@ -237,8 +261,10 @@ impl Controller {
                     urn,
                     uuid.as_deref().unwrap_or("unknown")
                 );
-                match &urn {
-                    ZONE_GROUP_TOPOLOGY => {
+                // I'd like to just match the URN to the defined constants, but
+                // that leads to "Indirect Structural Match" lint error
+                match urn.typ() {
+                    "ZoneGroupTopology" => {
                         // The speaker we were getting updates from may have gone offline. Try another
                         let (service, url) = self.get_a_service_and_url(ZONE_GROUP_TOPOLOGY)?;
                         self.topology_subscription = Subscriber::new();
@@ -255,7 +281,7 @@ impl Controller {
                             }
                         }
                     }
-                    AV_TRANSPORT => {
+                    "AVTransport" => {
                         // The speaker we are subscribing to may have gone
                         // offline or gotten a new IP. In case its the later,
                         // the SpeakerInfo and Device could be out of sync
@@ -297,7 +323,6 @@ impl Controller {
         name: String,
         action: ZoneAction,
     ) -> Result<()> {
-
         debug!("Got {:?}", action);
         action.handle_action(&self, tx, name).await
     }
@@ -305,7 +330,7 @@ impl Controller {
     /// Run the event loop.
     ///
     ///     * Subscribe and listen to events on the sonos system
-    ///     * Keep system state up-to-date 
+    ///     * Keep system state up-to-date
     ///     * Listen for commands from clients to perform actions on zones.
     ///
     /// Will return an error if system goes offline.
@@ -322,7 +347,7 @@ impl Controller {
         let topo_rx = self.topology_subscription.subscribe(service, url, None)?;
         event_stream.push(WatchStream::new(topo_rx));
 
-        let mut rx = self.rx.take().ok_or(ControllerNotInitialized)?;
+        let mut rx = self.rx.take().ok_or(Error::ControllerNotInitialized)?;
 
         debug!("Listening for commands");
         loop {
@@ -340,7 +365,7 @@ impl Controller {
                 }
             }
         }
-        // put reciever back if we exit gracefully? 
+        // put reciever back if we exit gracefully?
         // self.rx = Some(rx);
         debug!("aborting");
         // self.topology_subscription.shutdown().await
@@ -357,12 +382,12 @@ impl Controller {
     }
 
     fn get_speaker_by_uuid(&self, uuid: &str) -> Option<&Speaker> {
-        self.speakerdata
-            .iter()
-            .find_map(|s| match s.speaker.info.uuid().eq_ignore_ascii_case(uuid) {
+        self.speakerdata.iter().find_map(|s| {
+            match s.speaker.info.uuid().eq_ignore_ascii_case(uuid) {
                 true => Some(&s.speaker),
                 false => None,
-            })
+            }
+        })
     }
 
     fn get_speakerdata_by_uuid(&self, uuid: &str) -> Option<&SpeakerData> {
@@ -409,9 +434,16 @@ impl Controller {
     }
 
     fn update_avtransport_data(&mut self, uuid: Uuid, data: Vec<(String, String)>) {
-        match self.speakerdata.iter_mut().find(|sd| sd.speaker.uuid().eq_ignore_ascii_case(&uuid)) {
+        match self
+            .speakerdata
+            .iter_mut()
+            .find(|sd| sd.speaker.uuid().eq_ignore_ascii_case(&uuid))
+        {
             Some(sd) => sd.transport_data = data,
-            None => warn!("Received AV Transport data for non-existant speaker {}", uuid),
+            None => warn!(
+                "Received AV Transport data for non-existant speaker {}",
+                uuid
+            ),
         };
     }
 }
