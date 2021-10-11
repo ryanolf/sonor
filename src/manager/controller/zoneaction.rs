@@ -1,21 +1,33 @@
+use std::convert::TryInto;
+
 use async_trait::async_trait;
 
 use super::Controller;
-use crate::{RepeatMode, Snapshot, manager::{MediaSource, Error,  Result, types::{Response, Responder}}};
+use crate::{
+    manager::{
+        types::{Responder, Response},
+        Error, MediaSource, Result,
+    },
+    RepeatMode, Snapshot,
+};
 
 #[derive(Debug)]
 pub enum ZoneAction {
     Exists,
     PlayNow(MediaSource),
     QueueAsNext(MediaSource),
+    Play,
     Pause,
+    PlayPause,
     NextTrack,
     PreviousTrack,
     SeekTime(u32),
     SeekTrack(u32),
-    SeekRelTrack(u32),
+    SeekRelTrack(i32),
     SetRepeat(RepeatMode),
     SetShuffle(bool),
+    SetCrossfade(bool),
+    SetPlayMode(RepeatMode, bool),
     ClearQueue,
     GetQueue,
     TakeSnapshot,
@@ -69,7 +81,9 @@ impl ZoneAction {
             QueueAsNext(media) => {
                 action!( media.queue_as_next(coordinatordata: get_coordinatordata_for_name) -> Ok(__) )
             }
+            Play => action!( coordinator.play: get_coordinator_for_name -> Ok(__) ),
             Pause => action!( coordinator.pause: get_coordinator_for_name -> Ok(__) ),
+            PlayPause => action!( coordinator.play_or_pause: get_coordinator_for_name -> Ok(__) ),
             NextTrack => action!( coordinator.next: get_coordinator_for_name -> Ok(__) ),
             PreviousTrack => action!( coordinator.previous: get_coordinator_for_name -> Ok(__) ),
             SeekTime(seconds) => {
@@ -81,8 +95,24 @@ impl ZoneAction {
             SeekRelTrack(number) => {
                 action!( number.seek_rel_track(coordinatordata: get_coordinatordata_for_name) -> Ok(__) )
             }
+            // TODO: SetRepeat and SetShuffle can be optimized to use cached info on playback state
             SetRepeat(mode) => action!( mode.set(coordinator: get_coordinator_for_name) -> Ok(__) ),
-            SetShuffle(state) => action!( state.set_crossfade(coordinator: get_coordinator_for_name) -> Ok(__) ),
+            SetShuffle(state) => {
+                action!( state.set_shuffle(coordinator: get_coordinator_for_name) -> Ok(__) )
+            }
+            SetCrossfade(state) => {
+                action!( state.set_crossfade(coordinator: get_coordinator_for_name) -> Ok(__) )
+            }
+            SetPlayMode(mode, state) => {
+                if let Some(coordinator) = controller.get_coordinator_for_name(&name) {
+                    log::debug!("Attempting to set play mode in {}", name);
+                    match coordinator.set_playback_mode(mode, state).await {
+                        Ok(()) => return tx.send(Response::Ok(())).or_else(|_| Ok(())),
+                        Err(e) => log::warn!("Error: {}", e),
+                    }
+                }
+                tx.send(Response::NotOk).ok();
+            }
             ClearQueue => action!( coordinator.clear_queue: get_coordinator_for_name -> Ok(__) ),
             GetQueue => action!( coordinator.queue: get_coordinator_for_name -> Queue(queue) ),
             ApplySnapshot(snapshot) => {
@@ -108,41 +138,60 @@ impl ZoneAction {
     }
 }
 
-
 #[async_trait]
 trait ZoneActionBoolExt {
+    async fn set_shuffle(self, speaker: &crate::Speaker) -> Result<()>;
     async fn set_crossfade(self, speaker: &crate::Speaker) -> Result<()>;
 }
 
 #[async_trait]
 impl ZoneActionBoolExt for bool {
+    async fn set_shuffle(self, speaker: &crate::Speaker) -> Result<()> {
+        speaker.set_shuffle(self).await.map_err(Error::from)
+    }
     async fn set_crossfade(self, speaker: &crate::Speaker) -> Result<()> {
         speaker.set_crossfade(self).await.map_err(Error::from)
     }
 }
 
 #[async_trait]
-trait ZoneActionNumbersExt {
+trait ZoneActionUnsignedNExt {
     async fn skip_to(self, speaker: &crate::Speaker) -> Result<()>;
     async fn seek_track(self, speaker: &crate::Speaker) -> Result<()>;
-    async fn seek_rel_track(self, speaker: &super::SpeakerData) -> Result<()>;
 }
 
 #[async_trait]
-impl ZoneActionNumbersExt for u32 {
+impl ZoneActionUnsignedNExt for u32 {
     async fn skip_to(self, speaker: &crate::Speaker) -> Result<()> {
         speaker.skip_to(self).await.map_err(Error::from)
     }
     async fn seek_track(self, speaker: &crate::Speaker) -> Result<()> {
         speaker.seek_track(self).await.map_err(Error::from)
     }
+}
+
+#[async_trait]
+trait ZoneActionSignedNExt {
+    async fn seek_rel_track(self, speaker: &super::SpeakerData) -> Result<()>;
+}
+
+#[async_trait]
+impl ZoneActionSignedNExt for i32 {
     async fn seek_rel_track(self, speakerdata: &super::SpeakerData) -> Result<()> {
-        let cur_track_no = speakerdata.get_current_track_no().await?;
+        let cur_track_no: i32 = speakerdata
+            .get_current_track_no()
+            .await?
+            .try_into()
+            .or(Err(Error::ZoneActionError))?;
         let target = cur_track_no + self;
         if target < 1 {
             speakerdata.speaker.seek_track(1).await.map_err(Error::from)
         } else {
-        speakerdata.speaker.seek_track(self).await.map_err(Error::from)
+            speakerdata
+                .speaker
+                .seek_track(self as u32)
+                .await
+                .map_err(Error::from)
         }
     }
 }

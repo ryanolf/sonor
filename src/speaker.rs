@@ -110,6 +110,15 @@ impl Speaker {
             Err(err) => Err(err),
         }
     }
+
+    pub async fn play_or_pause(&self) -> Result<()> {
+        if self.is_playing().await? {
+            self.pause().await
+        } else {
+            self.play().await
+        }
+    }
+
     pub async fn next(&self) -> Result<()> {
         self.action(AV_TRANSPORT, "Next", DEFAULT_ARGS)
             .await
@@ -135,7 +144,7 @@ impl Speaker {
         self.action(AV_TRANSPORT, "Seek", args).await.map(drop)
     }
 
-    async fn playback_mode(&self) -> Result<(RepeatMode, bool)> {
+    pub async fn playback_mode(&self) -> Result<(RepeatMode, bool)> {
         let play_mode = self
             .action(AV_TRANSPORT, "GetTransportSettings", DEFAULT_ARGS)
             .await?
@@ -162,7 +171,7 @@ impl Speaker {
         self.playback_mode().await.map(|(_, shuffle)| shuffle)
     }
 
-    async fn set_playback_mode(&self, repeat_mode: RepeatMode, shuffle: bool) -> Result<()> {
+    pub async fn set_playback_mode(&self, repeat_mode: RepeatMode, shuffle: bool) -> Result<()> {
         let playback_mode = match (repeat_mode, shuffle) {
             (RepeatMode::None, false) => "NORMAL",
             (RepeatMode::One, false) => "REPEAT_ONE",

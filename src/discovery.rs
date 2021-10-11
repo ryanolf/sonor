@@ -17,6 +17,15 @@ use std::time::Duration;
 
     Ok(stream)
 }*/
+async fn discover_simple(
+    timeout: Duration,
+) -> Result<impl Stream<Item = Result<Speaker>>> {
+    let stream = rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS)
+        .await?
+        .try_filter_map(|d| async { Ok(Speaker::from_device(d)) })
+        .map_err(|e| e.into());
+    Ok(stream)
+}
 
 // 292ms +/- 191ms for two devices in network
 /// Discover sonos players on the network.
@@ -84,7 +93,7 @@ pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
     Err(Error::NoSpeakersDetected)
 }
 
-/// Search for a sonos speaker by its name.
+/// Search for a sonos speaker by its name. Will work even with multiple systems on same network.
 ///
 /// # Example Usage
 ///
@@ -100,11 +109,12 @@ pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
 /// # Ok(())
 /// # }
 pub async fn find(roomname: &str, timeout: Duration) -> Result<Option<Speaker>> {
-    let mut devices = discover(timeout).await?;
+    let speakers = discover_simple(timeout).await?;
+    futures_util::pin_mut!(speakers);
 
-    while let Some(device) = devices.try_next().await? {
-        if device.name().eq_ignore_ascii_case(roomname) {
-            return Ok(Some(device));
+    while let Some(speaker) = speakers.try_next().await? {
+        if speaker.name().eq_ignore_ascii_case(roomname) {
+            return Ok(Some(speaker));
         }
     }
 

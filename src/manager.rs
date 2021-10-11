@@ -37,10 +37,10 @@ pub struct Zone<'a> {
 }
 
 macro_rules! action {
-    ($fn:ident: $action:ident$(($invar:ident: $intyp:ty))? => $resp:ident($outvar:ident: $outtyp:ty)) => {
-        pub async fn $fn(&self$(, $invar: $intyp)?) -> Result<$outtyp>{
+    ($fn:ident: $action:ident$(($($invar:ident: $intyp:ty),+))? => $resp:ident($outvar:ident: $outtyp:ty)) => {
+        pub async fn $fn(&self$($(, $invar: $intyp)+)?)-> Result<$outtyp>{
             use ZoneAction::*;
-            match self.action($action$(($invar))?).await? {
+            match self.action($action$(($($invar),+))?).await? {
                 Response::$resp($outvar) => Ok($outvar),
                 _ => Err(Error::ZoneActionError)
             }
@@ -63,14 +63,18 @@ impl<'a> Zone<'a> {
 
     action!(play_now: PlayNow(media: MediaSource) => Ok(__: ()));
     action!(queue_as_next: QueueAsNext(media: MediaSource) => Ok(__: ()));
+    action!(play: Play => Ok(__: ()));
     action!(pause: Pause => Ok(__: ()));
+    action!(play_or_pause: PlayPause => Ok(__: ()));
     action!(next_track: NextTrack => Ok(__: ()));
     action!(previous_track: PreviousTrack => Ok(__: ()));
     action!(seek_time: SeekTime(seconds: u32) => Ok(__: ()));
     action!(seek_track: SeekTrack(seconds: u32) => Ok(__: ()));
-    action!(seek_rel_track: SeekRelTrack(number: u32) => Ok(__: ()));
+    action!(seek_rel_track: SeekRelTrack(number: i32) => Ok(__: ()));
     action!(set_repeat: SetRepeat(mode: crate::RepeatMode) => Ok(__: ()));
     action!(set_shuffle: SetShuffle(state: bool) => Ok(__: ()));
+    action!(set_crossfade: SetCrossfade(state: bool) => Ok(__: ()));
+    action!(set_play_mode: SetPlayMode(mode: crate::RepeatMode, state: bool) => Ok(__: ()));
     action!(clear_queue: ClearQueue => Ok(__: ()));
     action!(get_queue: GetQueue => Queue(queue: Vec<Track>));
     action!(take_snapshot: TakeSnapshot => Snapshot(snap: Snapshot));
@@ -80,8 +84,17 @@ impl<'a> Zone<'a> {
 
 impl Manager {
     pub async fn new() -> Result<Manager> {
-        let mut controller = Controller::new();
+        let controller = Controller::new();
+        Self::new_with_controller(controller).await
+    }
 
+    pub async fn new_with_roomname(room: &str) -> Result<Manager> {
+        let mut controller = Controller::new();
+        controller.seed_by_roomname(room).await?;
+        Self::new_with_controller(controller).await
+    }
+
+    async fn new_with_controller(mut controller: Controller) -> Result<Manager> {
         let tx = Some(controller.init().await?);
         log::debug!("Initialized controller with devices:");
         for device in controller.speakers().iter() {

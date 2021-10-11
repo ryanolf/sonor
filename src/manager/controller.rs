@@ -12,7 +12,7 @@ use super::{
     Command, Error, Result,
 };
 use crate::{
-    discover_one, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY, Service, Speaker,
+    discover_one, find, speaker::AV_TRANSPORT, speaker::ZONE_GROUP_TOPOLOGY, Service, Speaker,
     SpeakerInfo, Uri, URN,
 };
 use futures_util::stream::{SelectAll, StreamExt};
@@ -60,7 +60,7 @@ impl SpeakerData {
 }
 
 #[derive(Debug, Default)]
-/// The manager owns the Speakers and keeps track of the topology
+/// The controller owns the Speakers and keeps track of the topology
 /// so it can perform actions using the appropriate coordinating speakers.
 pub(super) struct Controller {
     speakerdata: Vec<SpeakerData>,
@@ -68,6 +68,7 @@ pub(super) struct Controller {
     topology_subscription: Subscriber,
     queued_event_handles: Vec<EventReceiver>,
     rx: Option<CmdReceiver>,
+    seed: Option<Speaker>,
 }
 
 impl Controller {
@@ -86,9 +87,30 @@ impl Controller {
         Ok(tx)
     }
 
+    pub async fn seed_by_roomname(&mut self, name: &str) -> Result<()> {
+        log::debug!("Looking for seed {}...", name);
+        let maybe_speaker = find(name, Duration::from_secs(5)).await?;
+        if let Some(speaker) = maybe_speaker {
+            self.seed = Some(speaker);
+        } else {
+            log::debug!("... got {:?} instead", maybe_speaker);
+            return Err(Error::ZoneDoesNotExist)
+        }
+        log::debug!("   ...found!");
+        Ok(())
+    }
+
     async fn discover_system(&mut self) -> Result<()> {
-        let speaker = discover_one(Duration::from_secs(5)).await?;
-        self.update_from_topology(speaker._zone_group_state().await?.into_iter().collect())
+        let topology = match self.seed.as_ref() {
+            Some(speaker) => speaker._zone_group_state().await?.into_iter().collect(),
+            None => discover_one(Duration::from_secs(5))
+                .await?
+                ._zone_group_state()
+                .await?
+                .into_iter()
+                .collect(),
+        };
+        self.update_from_topology(topology)
             .await
             .unwrap_or_else(|err| warn!("Error updating system topology: {:?}", err));
         Ok(())
@@ -235,7 +257,12 @@ impl Controller {
                     .unwrap_or_else(|err| warn!("Error updating system topology: {:?}", err))
             }
             AVTransUpdate(uuid, data) => {
-                // let keys = ["CurrentPlayMode", "CurrentTrack", "CurrentCrossfadeMode", "AVTransportURI"];
+                let keys = [
+                    "CurrentPlayMode",
+                    "CurrentTrack",
+                    "TransportState",
+                    "AVTransportURI",
+                ];
                 debug!(
                     "Got AVTransUpdate for {} (coord: {})",
                     self.get_speaker_by_uuid(uuid.as_ref().unwrap())
@@ -245,7 +272,12 @@ impl Controller {
                         .map(|s| s.info.name())
                         .unwrap_or_default()
                 );
-                // debug!("... {:?}", data.iter().filter(|(s, d)| keys.contains(&s.as_str())).collect::<Vec<&(String,String)>>());
+                debug!(
+                    "... {:?}",
+                    data.iter()
+                        .filter(|(s, _)| keys.contains(&s.as_str()))
+                        .collect::<Vec<&(String, String)>>()
+                );
                 if let Some(uuid) = uuid {
                     self.update_avtransport_data(uuid, data)
                 } else {
