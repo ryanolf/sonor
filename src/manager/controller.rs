@@ -44,11 +44,15 @@ impl SpeakerData {
     /// Get the current track number for this speaker. Take value from cache if
     /// available, otherwise ask for it.
     pub(crate) async fn get_current_track_no(&self) -> Result<u32> {
-        match self.transport_data.iter().find_map(|(k, v)| {
-            k.eq_ignore_ascii_case("CurrentTrack");
-            Some(v)
-        }) {
-            Some(track_no) => track_no.parse().map_err(|_| Error::ContentNotFound),
+        match self
+            .transport_data
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("CurrentTrack"))
+        {
+            Some((_, track_no)) => {
+                log::debug!("Using cached current track no: {}", track_no);
+                track_no.parse().map_err(|_| Error::ContentNotFound)
+            }
             None => self
                 .speaker
                 .track()
@@ -94,7 +98,7 @@ impl Controller {
             self.seed = Some(speaker);
         } else {
             log::debug!("... got {:?} instead", maybe_speaker);
-            return Err(Error::ZoneDoesNotExist)
+            return Err(Error::ZoneDoesNotExist);
         }
         log::debug!("   ...found!");
         Ok(())
