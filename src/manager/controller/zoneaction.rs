@@ -187,9 +187,10 @@ impl ZoneActionSignedNExt for i32 {
         if target < 1 {
             speakerdata.speaker.seek_track(1).await.map_err(Error::from)
         } else {
+            log::debug!("Seeking to track: {}", target);
             speakerdata
                 .speaker
-                .seek_track(self as u32)
+                .seek_track(target as u32)
                 .await
                 .map_err(Error::from)
         }
