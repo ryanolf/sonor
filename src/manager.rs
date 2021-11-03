@@ -61,6 +61,11 @@ impl<'a> Zone<'a> {
         rx.await.map_err(|_| Error::MessageRecvError)
     }
 
+    pub async fn update_room(&mut self, room_name: String) -> Result<()> {
+        self.name = self.manager.get_zone(room_name).await?.name;
+        Ok(())
+    }
+
     action!(play_now: PlayNow(media: MediaSource) => Ok(__: ()));
     action!(queue_as_next: QueueAsNext(media: MediaSource) => Ok(__: ()));
     action!(play: Play => Ok(__: ()));
@@ -115,10 +120,10 @@ impl Manager {
         })
     }
 
-    pub async fn get_zone(&self, zone_name: &str) -> Result<Zone<'_>> {
+    pub async fn get_zone(&self, room_name: String) -> Result<Zone<'_>> {
         let zone = Zone {
             manager: self,
-            name: zone_name.to_string(),
+            name: room_name,
         };
         match zone.action(ZoneAction::Exists).await? {
             Response::Ok(_) => Ok(zone),
