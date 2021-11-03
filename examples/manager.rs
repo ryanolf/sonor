@@ -21,17 +21,20 @@ async fn main() -> Result<(), Error> {
     // zone.play_now(Spotify("user:spotify:playlist:32O0SSXDNWDrMievPkV0Im".into())).await?;
     // zone.play_now(Apple("album:1025210938".into())).await?;
     // zone.play_now(SonosFavorite("New York Rhapsody".into())).await?;
-    sleep(Duration::from_secs(10)).await;
+    // sleep(Duration::from_secs(10)).await;
     // zone.set_play_mode(sonor::RepeatMode::One, true).await?;
     // zone.play_or_pause().await?;
-    // sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(5)).await;
     // zone.next_track().await?;
-    // sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(5)).await;
     // zone.pause().await?;
+    // zone.previous_track().await?;
+    zone.set_shuffle(true).await?;
+    // zone.seek_track(seconds)
     // zone.set_play_mode(sonor::RepeatMode::None, false).await?;
     // zone.play_now(SonosPlaylist("Cars 1, 2, 3".into())).await?;
     // zone.pause().await?;
     // zone.apply_snapshot(snapshot).await?;
-    zone.seek_rel_track(5).await?;
+    // zone.seek_rel_track(5).await?;
     Ok(())
 }

@@ -74,7 +74,7 @@ impl<'a> Zone<'a> {
     action!(next_track: NextTrack => Ok(__: ()));
     action!(previous_track: PreviousTrack => Ok(__: ()));
     action!(seek_time: SeekTime(seconds: u32) => Ok(__: ()));
-    action!(seek_track: SeekTrack(seconds: u32) => Ok(__: ()));
+    action!(seek_track: SeekTrack(number: u32) => Ok(__: ()));
     action!(seek_rel_track: SeekRelTrack(number: i32) => Ok(__: ()));
     action!(set_repeat: SetRepeat(mode: crate::RepeatMode) => Ok(__: ()));
     action!(set_shuffle: SetShuffle(state: bool) => Ok(__: ()));
