@@ -7,6 +7,7 @@ mod controller;
 mod mediasource;
 mod metadata;
 mod error;
+mod escape;
 mod subscriber;
 mod types;
 

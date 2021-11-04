@@ -1,6 +1,6 @@
 use super::{Error, Result, SpeakerData, metadata::{apple_uri_and_metadata, spotify_uri_and_metadata}};
 use crate::Speaker;
-use xml::escape::escape_str_pcdata;
+use super::escape::escape_str_pcdata;
 
 #[derive(Debug)]
 /// Definitions for media that can be played and queued.

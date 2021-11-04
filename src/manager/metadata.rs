@@ -1,5 +1,5 @@
 //! Guess metadata and uri from strings
-use xml::escape::escape_str_pcdata;
+use super::escape::escape_str_pcdata;
 use urlencoding::encode;
 
 
@@ -103,9 +103,8 @@ mod tests{
 
     #[test]
     fn test_apple_playlist() -> Result<(), Box<dyn Error>> {
-        let (uri, meta) = apple_uri_and_metadata("album:1025210938").ok_or("Error")?;
-        assert_eq!(uri, r"x-rincon-cpcontainer:1004206calbum:1025210938?sid=204");
-        assert_eq!(&meta[250..350], r#"5210938" parentID="00020000album%3a" restricted="true">&lt;dc:title>&lt;/dc:title>&lt;upnp:class>obj"#);
+        let (uri, _meta) = apple_uri_and_metadata("album:1025210938").ok_or("Error")?;
+        assert_eq!(uri, r"x-rincon-cpcontainer:0004206calbum%3A1025210938?sid=204");
         Ok(())
     }
 
