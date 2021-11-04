@@ -17,9 +17,7 @@ use std::time::Duration;
 
     Ok(stream)
 }*/
-async fn discover_simple(
-    timeout: Duration,
-) -> Result<impl Stream<Item = Result<Speaker>>> {
+async fn discover_simple(timeout: Duration) -> Result<impl Stream<Item = Result<Speaker>>> {
     let stream = rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS)
         .await?
         .try_filter_map(|d| async { Ok(Speaker::from_device(d)) })
@@ -85,9 +83,9 @@ pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
         rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS).await?;
     futures_util::pin_mut!(devices);
 
-    while let Some(device) = devices.try_next().await?  {
+    while let Some(device) = devices.try_next().await? {
         if let Some(speaker) = Speaker::from_device(device) {
-            return Ok(speaker)
+            return Ok(speaker);
         }
     }
     Err(Error::NoSpeakersDetected)
