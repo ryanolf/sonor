@@ -53,22 +53,25 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
 
     let mut devices_iter = None;
 
-    if let Some(device) = devices.try_next().await? {
-        let iter = Speaker::from_device(device)
-            .ok_or(Error::NonSonosDevicesInSonosUPnPDiscovery)?
-            ._zone_group_state()
-            .await?
-            .into_iter()
-            .flat_map(|(_, speakers)| speakers)
-            .map(|speaker_info| {
-                let url = speaker_info.location().parse();
-                async {
-                    let device = Device::from_url_with_extra(url?, EXTRA_DEVICE_FIELDS).await?;
-                    let speaker = Speaker::from_device(device);
-                    speaker.ok_or(Error::GetZoneGroupStateReturnedNonSonos)
-                }
-            });
-        devices_iter = Some(iter);
+    while let Some(device) = devices.try_next().await? {
+        if let Some(speaker) = Speaker::from_device(device) {
+            let iter = speaker
+                ._zone_group_state()
+                .await?
+                .into_iter()
+                .flat_map(|(_, speakers)| speakers)
+                .map(|speaker_info| {
+                    let url = speaker_info.location().parse();
+                    async {
+                        let device = Device::from_url_with_extra(url?, EXTRA_DEVICE_FIELDS).await?;
+                        let speaker = Speaker::from_device(device);
+                        speaker.ok_or(Error::GetZoneGroupStateReturnedNonSonos)
+                    }
+                });
+            devices_iter = Some(iter);
+        } else {
+            continue
+        }
     };
 
     Ok(devices_iter
