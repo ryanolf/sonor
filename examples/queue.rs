@@ -1,5 +1,5 @@
 use std::time::Duration;
-use xml::escape::escape_str_pcdata;
+use sonor::manager::escape::escape_str_pcdata;
 
 #[tokio::main]
 async fn main() -> Result<(), sonor::Error> {
