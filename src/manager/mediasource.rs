@@ -33,7 +33,7 @@ impl MediaSource {
                 log::debug!("Found favorite {:?}", favorite);
                 Some((
                     favorite.uri()?.into(),
-                    escape_str_pcdata(favorite.metadata()?).into(),
+                    favorite.metadata()?.into(),
                 ))
             }
         }
@@ -55,7 +55,7 @@ impl MediaSource {
             .await
             .ok_or(Error::ContentNotFound)?;
         speaker
-            .queue_next(&uri, &metadata, Some(cur_track_no + 1))
+            .queue_next(&uri, &escape_str_pcdata(&metadata), Some(cur_track_no + 1))
             .await?;
         Ok(())
     }
@@ -67,7 +67,7 @@ impl MediaSource {
             .await
             .ok_or(Error::ContentNotFound)?;
         coordinator.clear_queue().await?;
-        coordinator.queue_next(&uri, &metadata, Some(0)).await?;
+        coordinator.queue_next(&uri, &escape_str_pcdata(&metadata), Some(1)).await?;
         // Turn on queue mode
         let queue_uri = format!("x-rincon-queue:{}#0", coordinator.uuid());
         coordinator.set_transport_uri(&queue_uri, "").await?;

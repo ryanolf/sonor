@@ -14,7 +14,7 @@ async fn main() -> Result<(), Error> {
         .await?;
 
     for device in devices.iter() {
-        println!("- {}", device.name());
+        println!("- {} at {}", device.name(), device.device().url());
     }
     // while let Some(device) = devices.try_next().await? {
     //     println!("- {}", device.name());
