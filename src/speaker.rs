@@ -564,6 +564,7 @@ pub(crate) fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<
                 .children()
                 .filter(Node::is_element)
                 .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroupMember"))
+                .filter(|c| c.attribute("Invisible") != Some("1"))
                 .map(SpeakerInfo::from_xml)
                 .collect::<Result<Vec<_>>>()?;
             Ok((coordinator, members))
