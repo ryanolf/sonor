@@ -255,7 +255,7 @@ impl Speaker {
 
     // RENDERING_CONTROL
 
-    pub async fn volume(&self) -> Result<u16> {
+    pub async fn volume(&self) -> Result<u32> {
         let args = args! { "InstanceID": 0, "Channel": "Master" };
         self.action(RENDERING_CONTROL, "GetVolume", args)
             .await?
@@ -265,13 +265,13 @@ impl Speaker {
                     .map_err(|e| rupnp::Error::invalid_response(e).into())
             })
     }
-    pub async fn set_volume(&self, volume: u16) -> Result<()> {
+    pub async fn set_volume(&self, volume: u32) -> Result<()> {
         let args = args! { "InstanceID": 0, "Channel": "Master", "DesiredVolume": volume };
         self.action(RENDERING_CONTROL, "SetVolume", args)
             .await
             .map(drop)
     }
-    pub async fn set_volume_relative(&self, adjustment: i16) -> Result<u16> {
+    pub async fn set_volume_relative(&self, adjustment: i32) -> Result<u32> {
         let args = args! { "InstanceID": 0, "Channel": "Master", "Adjustment": adjustment };
         self.action(RENDERING_CONTROL, "SetRelativeVolume", args)
             .await?

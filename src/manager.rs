@@ -85,6 +85,7 @@ impl<'a> Zone<'a> {
     action!(get_queue: GetQueue => Queue(queue: Vec<Track>));
     action!(take_snapshot: TakeSnapshot => Snapshot(snap: Snapshot));
     action!(apply_snapshot: ApplySnapshot(snap: Snapshot) => Ok(__: ()));
+    action!(set_rel_volume: SetRelVolume(number: i32) => Ok(__: ()));
 
 }
 

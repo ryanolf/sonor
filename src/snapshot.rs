@@ -6,7 +6,7 @@ use futures_util::future::{try_join, try_join4};
 /// The struct is obtained by calling the [snapshot](struct.Speaker.html#method.snapshot)-method on a speaker and applied using [Speaker::apply](struct.Speaker.html#method.apply).
 #[derive(Debug, Default)]
 pub struct Snapshot {
-    volume: Option<u16>,
+    volume: Option<u32>,
     is_playing: Option<bool>,
     track_info: Option<TrackInfo>,
 
@@ -15,7 +15,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     /// Sets the volume of the snapshot
-    pub fn set_volume(&mut self, volume: u16) -> &mut Self {
+    pub fn set_volume(&mut self, volume: u32) -> &mut Self {
         self.volume = Some(volume);
         self
     }
