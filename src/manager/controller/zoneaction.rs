@@ -32,6 +32,7 @@ pub enum ZoneAction {
     GetQueue,
     TakeSnapshot,
     ApplySnapshot(Snapshot),
+    SetRelVolume(i32)
 }
 use ZoneAction::*;
 
@@ -132,6 +133,7 @@ impl ZoneAction {
                     tx.send(Response::NotOk).unwrap_or(());
                 }
             }
+            SetRelVolume(number) => action!( number.set_rel_volume(coordinator: get_coordinator_for_name) -> Ok(__) ),
         }
 
         Ok(())
@@ -173,6 +175,8 @@ impl ZoneActionUnsignedNExt for u32 {
 #[async_trait]
 trait ZoneActionSignedNExt {
     async fn seek_rel_track(self, speaker: &super::SpeakerData) -> Result<()>;
+    async fn set_rel_volume(self, speaker: &super::Speaker) -> Result<()>;
+
 }
 
 #[async_trait]
@@ -194,5 +198,9 @@ impl ZoneActionSignedNExt for i32 {
                 .await
                 .map_err(Error::from)
         }
+    }
+
+    async fn set_rel_volume(self, speaker: &super::Speaker) -> Result<()> {
+        speaker.set_volume_relative(self).await.map(|_| ()).map_err(Error::from)
     }
 }
