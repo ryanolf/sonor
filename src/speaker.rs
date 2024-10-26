@@ -1,4 +1,10 @@
-use crate::{Error, RepeatMode, Result, Snapshot, SpeakerInfo, args, content::Content, track::{Track, TrackInfo}, utils::{self, HashMapExt}};
+use crate::{
+    args,
+    content::Content,
+    track::{Track, TrackInfo},
+    utils::{self, HashMapExt},
+    Error, RepeatMode, Result, Snapshot, SpeakerInfo,
+};
 
 use roxmltree::{Document, Node};
 use rupnp::{ssdp::URN, Device};
@@ -34,8 +40,8 @@ impl Speaker {
     /// which is used by sonos devices.
     pub fn from_device(device: Device) -> Option<Self> {
         if device.device_type() == &SONOS_URN {
-            let name = device.get_extra_element("roomName")?.to_string();
-            let uuid = device.get_extra_element("UDN")?[5..].to_string();
+            let name = device.get_extra_property("roomName")?.to_string();
+            let uuid = device.get_extra_property("UDN")?[5..].to_string();
             let location = device.url().to_string();
             let info = SpeakerInfo {
                 name,
@@ -55,7 +61,7 @@ impl Speaker {
             .parse()
             .expect("is always valid");
 
-        Ok(Device::from_url_with_extra(uri, EXTRA_DEVICE_FIELDS)
+        Ok(Device::from_url_and_properties(uri, EXTRA_DEVICE_FIELDS)
             .await
             .map(Speaker::from_device)?)
     }
@@ -63,7 +69,7 @@ impl Speaker {
     // Creates a speaker from a SpeakerInfo
     pub async fn from_speaker_info(info: &SpeakerInfo) -> Result<Option<Self>> {
         let url = info.location().parse();
-        let device = Device::from_url_with_extra(url?, EXTRA_DEVICE_FIELDS).await?;
+        let device = Device::from_url_and_properties(url?, EXTRA_DEVICE_FIELDS).await?;
         Ok(Self::from_device(device))
     }
 
@@ -507,15 +513,15 @@ impl Speaker {
             .await?
             .extract("Result")?;
         // log::debug!("{:#?}", result);
-    
-            Document::parse(&result)?
-                .root()
-                .first_element_child()
-                .ok_or_else(|| rupnp::Error::ParseError("Browse Response contains no children"))?
-                .children()
-                .filter(roxmltree::Node::is_element)
-                .map(Content::from_xml)
-                .collect()
+
+        Document::parse(&result)?
+            .root()
+            .first_element_child()
+            .ok_or_else(|| rupnp::Error::ParseError("Browse Response contains no children"))?
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .map(Content::from_xml)
+            .collect()
     }
 
     /// Take a snapshot of the state the speaker is in right now.

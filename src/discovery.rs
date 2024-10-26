@@ -18,7 +18,7 @@ use std::time::Duration;
     Ok(stream)
 }*/
 async fn discover_simple(timeout: Duration) -> Result<impl Stream<Item = Result<Speaker>>> {
-    let stream = rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS)
+    let stream = rupnp::discover_with_properties(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS)
         .await?
         .try_filter_map(|d| async { Ok(Speaker::from_device(d)) })
         .map_err(|e| e.into());
@@ -62,7 +62,7 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
             .map(|speaker_info| {
                 let url = speaker_info.location().parse();
                 async {
-                    let device = Device::from_url_with_extra(url?, EXTRA_DEVICE_FIELDS).await?;
+                    let device = Device::from_url_and_properties(url?, EXTRA_DEVICE_FIELDS).await?;
                     let speaker = Speaker::from_device(device);
                     speaker.ok_or(Error::GetZoneGroupStateReturnedNonSonos)
                 }
@@ -80,7 +80,7 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
 pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
     // this method searches for devices, and returns first one it finds
     let devices =
-        rupnp::discover_with_extra(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS).await?;
+        rupnp::discover_with_properties(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS).await?;
     futures_util::pin_mut!(devices);
 
     while let Some(device) = devices.try_next().await? {
