@@ -1,5 +1,5 @@
 use crate::{
-    speaker::{Speaker, SONOS_URN},
+    speaker::{Speaker, EXTRA_DEVICE_FIELDS, SONOS_URN},
     Error, Result,
 };
 use futures_util::stream::{FuturesUnordered, Stream, TryStreamExt};
@@ -17,6 +17,13 @@ use std::time::Duration;
 
     Ok(stream)
 }*/
+async fn discover_simple(timeout: Duration) -> Result<impl Stream<Item = Result<Speaker>>> {
+    let stream = rupnp::discover_with_properties(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS)
+        .await?
+        .try_filter_map(|d| async { Ok(Speaker::from_device(d)) })
+        .map_err(|e| e.into());
+    Ok(stream)
+}
 
 // 292ms +/- 191ms for two devices in network
 /// Discover sonos players on the network.
@@ -30,7 +37,7 @@ use std::time::Duration;
 /// let mut devices = sonor::discover(Duration::from_secs(2)).await?;
 ///
 /// while let Some(device) = devices.try_next().await? {
-///     let name = device.name().await?;
+///     let name = device.name();
 ///     println!("- {}", name);
 /// }
 /// # Ok(())
@@ -55,7 +62,7 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
             .map(|speaker_info| {
                 let url = speaker_info.location().parse();
                 async {
-                    let device = Device::from_url(url?).await?;
+                    let device = Device::from_url_and_properties(url?, EXTRA_DEVICE_FIELDS).await?;
                     let speaker = Speaker::from_device(device);
                     speaker.ok_or(Error::GetZoneGroupStateReturnedNonSonos)
                 }
@@ -69,25 +76,43 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
         .collect::<FuturesUnordered<_>>())
 }
 
-/// Search for a sonos speaker by its name.
+/// Discover one sonos player on the network
+pub async fn discover_one(timeout: Duration) -> Result<Speaker> {
+    // this method searches for devices, and returns first one it finds
+    let devices =
+        rupnp::discover_with_properties(&SONOS_URN.into(), timeout, EXTRA_DEVICE_FIELDS).await?;
+    futures_util::pin_mut!(devices);
+
+    while let Some(device) = devices.try_next().await? {
+        if let Some(speaker) = Speaker::from_device(device) {
+            return Ok(speaker);
+        }
+    }
+    Err(Error::NoSpeakersDetected)
+}
+
+/// Search for a sonos speaker by its name. Will work even with multiple systems on same network.
 ///
 /// # Example Usage
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use futures::prelude::*;
 /// # use std::time::Duration;
-/// # async fn f() -> Result<(), sonor::Error> {
-/// let speaker = sonor::find("your room name", Duration::from_secs(1)).await?
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), sonor::Error> {
+/// let mut speaker = sonor::find("Living Room", Duration::from_secs(1)).await?
 ///     .expect("player exists");
-/// assert_eq!(speaker.name().await?, "yoor room name");
+/// assert_eq!(speaker.name(), "Living Room");
+/// assert_eq!(speaker.update_name().await?, "Living Room");
 /// # Ok(())
-/// # };
+/// # }
 pub async fn find(roomname: &str, timeout: Duration) -> Result<Option<Speaker>> {
-    let mut devices = discover(timeout).await?;
+    let speakers = discover_simple(timeout).await?;
+    futures_util::pin_mut!(speakers);
 
-    while let Some(device) = devices.try_next().await? {
-        if device.name().await?.eq_ignore_ascii_case(roomname) {
-            return Ok(Some(device));
+    while let Some(speaker) = speakers.try_next().await? {
+        if speaker.name().eq_ignore_ascii_case(roomname) {
+            return Ok(Some(speaker));
         }
     }
 

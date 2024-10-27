@@ -1,28 +1,37 @@
 use crate::{
     args,
+    content::Content,
     track::{Track, TrackInfo},
     utils::{self, HashMapExt},
     Error, RepeatMode, Result, Snapshot, SpeakerInfo,
 };
+
 use roxmltree::{Document, Node};
 use rupnp::{ssdp::URN, Device};
 use std::{collections::HashMap, net::Ipv4Addr};
 
 pub(crate) const SONOS_URN: URN = URN::device("schemas-upnp-org", "ZonePlayer", 1);
 
-const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
+pub(crate) const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
 const DEVICE_PROPERTIES: &URN = &URN::service("schemas-upnp-org", "DeviceProperties", 1);
 const RENDERING_CONTROL: &URN = &URN::service("schemas-upnp-org", "RenderingControl", 1);
-const ZONE_GROUP_TOPOLOGY: &URN = &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
+pub(crate) const ZONE_GROUP_TOPOLOGY: &URN =
+    &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
+const CONTENT_DIRECTORY: &URN = &URN::service("schemas-upnp-org", "ContentDirectory", 1);
 const QUEUE: &URN = &URN::service("schemas-sonos-com", "Queue", 1);
 const MUSIC_SERVICES: &URN = &URN::service("schemas-upnp-org", "MusicServices", 1);
+
+pub(crate) const EXTRA_DEVICE_FIELDS: &[&str; 2] = &["roomName", "UDN"];
 
 const DEFAULT_ARGS: &str = "<InstanceID>0</InstanceID>";
 
 #[derive(Debug, Clone)]
 /// A sonos speaker, wrapping a UPnP-Device and providing user-oriented methods in an asynyronous
 /// API.
-pub struct Speaker(Device);
+pub struct Speaker {
+    pub(crate) device: Device,
+    pub(crate) info: SpeakerInfo,
+}
 
 #[allow(missing_docs)]
 impl Speaker {
@@ -31,7 +40,15 @@ impl Speaker {
     /// which is used by sonos devices.
     pub fn from_device(device: Device) -> Option<Self> {
         if device.device_type() == &SONOS_URN {
-            Some(Self(device))
+            let name = device.get_extra_property("roomName")?.to_string();
+            let uuid = device.get_extra_property("UDN")?[5..].to_string();
+            let location = device.url().to_string();
+            let info = SpeakerInfo {
+                name,
+                uuid,
+                location,
+            };
+            Some(Self { device, info })
         } else {
             None
         }
@@ -39,34 +56,44 @@ impl Speaker {
 
     /// Creates a speaker from an IPv4 address.
     /// It returns `Ok(None)` when the device was found but isn't a sonos player.
-    pub async fn from_ip(addr: Ipv4Addr) -> Result<Option<Self>> {
+    pub async fn from_ip(addr: Ipv4Addr) -> Result<Option<Speaker>> {
         let uri = format!("http://{}:1400/xml/device_description.xml", addr)
             .parse()
             .expect("is always valid");
 
-        Ok(Device::from_url(uri).await.map(Speaker::from_device)?)
+        Ok(Device::from_url_and_properties(uri, EXTRA_DEVICE_FIELDS)
+            .await
+            .map(Speaker::from_device)?)
+    }
+
+    // Creates a speaker from a SpeakerInfo
+    pub async fn from_speaker_info(info: &SpeakerInfo) -> Result<Option<Self>> {
+        let url = info.location().parse();
+        let device = Device::from_url_and_properties(url?, EXTRA_DEVICE_FIELDS).await?;
+        Ok(Self::from_device(device))
     }
 
     pub fn device(&self) -> &Device {
-        &self.0
+        &self.device
     }
 
-    pub async fn name(&self) -> Result<String> {
-        self.action(DEVICE_PROPERTIES, "GetZoneAttributes", "")
+    pub async fn update_name(&mut self) -> Result<&str> {
+        if let Ok(new_name) = self
+            .action(DEVICE_PROPERTIES, "GetZoneAttributes", "")
             .await?
             .extract("CurrentZoneName")
+        {
+            self.info.name = new_name;
+        };
+        Ok(&self.info.name)
     }
 
-    pub async fn uuid(&self) -> Result<String> {
-        let uuid = self
-            ._zone_group_state()
-            .await?
-            .into_iter()
-            .flat_map(|(_, speakers)| speakers)
-            .find(|speaker_info| self.0.url() == speaker_info.location())
-            .map(|speaker_info| speaker_info.uuid);
+    pub fn name(&self) -> &str {
+        &self.info.name
+    }
 
-        uuid.ok_or(Error::SpeakerNotIncludedInOwnZoneGroupState)
+    pub fn uuid(&self) -> &str {
+        &self.info.uuid
     }
 
     // AV_TRANSPORT
@@ -89,6 +116,15 @@ impl Speaker {
             Err(err) => Err(err),
         }
     }
+
+    pub async fn play_or_pause(&self) -> Result<()> {
+        if self.is_playing().await? {
+            self.pause().await
+        } else {
+            self.play().await
+        }
+    }
+
     pub async fn next(&self) -> Result<()> {
         self.action(AV_TRANSPORT, "Next", DEFAULT_ARGS)
             .await
@@ -114,7 +150,7 @@ impl Speaker {
         self.action(AV_TRANSPORT, "Seek", args).await.map(drop)
     }
 
-    async fn playback_mode(&self) -> Result<(RepeatMode, bool)> {
+    pub async fn playback_mode(&self) -> Result<(RepeatMode, bool)> {
         let play_mode = self
             .action(AV_TRANSPORT, "GetTransportSettings", DEFAULT_ARGS)
             .await?
@@ -141,7 +177,7 @@ impl Speaker {
         self.playback_mode().await.map(|(_, shuffle)| shuffle)
     }
 
-    async fn set_playback_mode(&self, repeat_mode: RepeatMode, shuffle: bool) -> Result<()> {
+    pub async fn set_playback_mode(&self, repeat_mode: RepeatMode, shuffle: bool) -> Result<()> {
         let playback_mode = match (repeat_mode, shuffle) {
             (RepeatMode::None, false) => "NORMAL",
             (RepeatMode::One, false) => "REPEAT_ONE",
@@ -241,7 +277,7 @@ impl Speaker {
             .await
             .map(drop)
     }
-    pub async fn set_volume_relative(&self, adjustment: i16) -> Result<u16> {
+    pub async fn set_volume_relative(&self, adjustment: i32) -> Result<u16> {
         let args = args! { "InstanceID": 0, "Channel": "Master", "Adjustment": adjustment };
         self.action(RENDERING_CONTROL, "SetRelativeVolume", args)
             .await?
@@ -349,8 +385,8 @@ impl Speaker {
     }
 
     /// Enqueues a track as the next one.
-    pub async fn queue_next(&self, uri: &str, metadata: &str) -> Result<()> {
-        let args = args! { "InstanceID": 0, "EnqueuedURI": uri, "EnqueuedURIMetaData": metadata, "DesiredFirstTrackNumberEnqueued": 0, "EnqueueAsNext": 1 };
+    pub async fn queue_next(&self, uri: &str, metadata: &str, track_no: Option<u32>) -> Result<()> {
+        let args = args! { "InstanceID": 0, "EnqueuedURI": uri, "EnqueuedURIMetaData": metadata, "DesiredFirstTrackNumberEnqueued": track_no.unwrap_or(0), "EnqueueAsNext": 1 };
         self.action(AV_TRANSPORT, "AddURIToQueue", args)
             .await
             .map(drop)
@@ -368,24 +404,7 @@ impl Speaker {
             .await?
             .extract("ZoneGroupState")?;
 
-        let doc = Document::parse(&state)?;
-        let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
-
-        state
-            .children()
-            .filter(Node::is_element)
-            .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroup"))
-            .map(|group| {
-                let coordinator = utils::find_node_attribute(group, "Coordinator")?.to_string();
-                let members = group
-                    .children()
-                    .filter(Node::is_element)
-                    .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroupMember"))
-                    .map(SpeakerInfo::from_xml)
-                    .collect::<Result<Vec<_>>>()?;
-                Ok((coordinator, members))
-            })
-            .collect()
+        extract_zone_topology(&state)
     }
 
     /// Returns all groups in the system as a map from the group coordinators UUID to a list of [Speaker Info](struct.SpeakerInfo.html)s.
@@ -471,9 +490,9 @@ impl Speaker {
         let services = utils::find_root_node(&document, "Services", "DescriptorList")?
             .children()
             .map(|node| -> Result<_> {
-                let id = utils::find_node_attribute(node, "Id")?;
-                let name = utils::find_node_attribute(node, "Name")?;
-                let capabilities = utils::find_node_attribute(node, "Capabilities")?;
+                let id = utils::try_find_node_attribute(node, "Id")?;
+                let name = utils::try_find_node_attribute(node, "Name")?;
+                let capabilities = utils::try_find_node_attribute(node, "Capabilities")?;
 
                 let id = id.parse().map_err(rupnp::Error::invalid_response)?;
                 let capabilities = capabilities
@@ -485,6 +504,24 @@ impl Speaker {
             .collect::<Result<_, _>>()?;
 
         Ok((available_services, services))
+    }
+
+    pub async fn browse(&self, object_id: &str, start: u32, limit: u32) -> Result<Vec<Content>> {
+        let args = args! { "ObjectID": object_id, "BrowseFlag": "BrowseDirectChildren", "StartingIndex": start, "RequestedCount": limit, "Filter" : "", "SortCriteria" : "" };
+        let result = self
+            .action(CONTENT_DIRECTORY, "Browse", args)
+            .await?
+            .extract("Result")?;
+        // log::debug!("{:#?}", result);
+
+        Document::parse(&result)?
+            .root()
+            .first_element_child()
+            .ok_or_else(|| rupnp::Error::ParseError("Browse Response contains no children"))?
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .map(Content::from_xml)
+            .collect()
     }
 
     /// Take a snapshot of the state the speaker is in right now.
@@ -507,14 +544,42 @@ impl Speaker {
         payload: &str,
     ) -> Result<HashMap<String, String>> {
         Ok(self
-            .0
+            .device
             .find_service(service)
             .ok_or_else(|| Error::MissingServiceForUPnPAction {
                 service: service.clone(),
                 action: action.to_string(),
                 payload: payload.to_string(),
             })?
-            .action(self.0.url(), action, payload)
+            .action(self.device.url(), action, payload)
             .await?)
     }
+}
+
+/// Extracts the zone topology from the given XML string, which should contain a
+/// `<ZoneGroups>` element.
+///
+/// Returns a vector of tuples, where the first element is the coordinator's
+/// UUID and the second element is a vector of
+/// [SpeakerInfo](struct.SpeakerInfo.html)s.
+pub fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
+    let doc = Document::parse(&state_xml)?;
+    let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
+
+    state
+        .children()
+        .filter(Node::is_element)
+        .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroup"))
+        .map(|group| {
+            let coordinator = utils::try_find_node_attribute(group, "Coordinator")?.to_string();
+            let members = group
+                .children()
+                .filter(Node::is_element)
+                .filter(|c| c.tag_name().name().eq_ignore_ascii_case("ZoneGroupMember"))
+                .filter(|c| c.attribute("Invisible") != Some("1"))
+                .map(SpeakerInfo::from_xml)
+                .collect::<Result<Vec<_>>>()?;
+            Ok((coordinator, members))
+        })
+        .collect()
 }
