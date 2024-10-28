@@ -67,6 +67,10 @@ impl Speaker {
         &self.device
     }
 
+    pub fn info(&self) -> &SpeakerInfo {
+        &self.info
+    }
+
     pub async fn update_name(&mut self) -> Result<&str> {
         if let Ok(new_name) = self
             .action(DEVICE_PROPERTIES, "GetZoneAttributes", "")
