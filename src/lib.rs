@@ -59,13 +59,14 @@ mod discovery;
 mod snapshot;
 mod speaker;
 mod track;
+pub mod urns;
 pub mod utils;
 
-pub use datatypes::{RepeatMode, SpeakerInfo};
+pub use datatypes::RepeatMode;
 pub use discovery::{discover, discover_one, find};
 pub use rupnp::{self, http::Uri, ssdp::URN, Service};
 pub use snapshot::Snapshot;
-pub use speaker::{extract_zone_topology, Speaker};
+pub use speaker::{extract_zone_topology, Speaker, SpeakerInfo};
 use thiserror::*;
 pub use track::{Track, TrackInfo};
 

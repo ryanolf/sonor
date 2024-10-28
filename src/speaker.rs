@@ -2,24 +2,14 @@ use crate::{
     args,
     content::Content,
     track::{Track, TrackInfo},
+    urns::*,
     utils::{self, HashMapExt},
-    Error, RepeatMode, Result, Snapshot, SpeakerInfo,
+    Error, RepeatMode, Result, Snapshot,
 };
 
 use roxmltree::{Document, Node};
 use rupnp::{ssdp::URN, Device};
-use std::{collections::HashMap, net::Ipv4Addr};
-
-pub(crate) const SONOS_URN: URN = URN::device("schemas-upnp-org", "ZonePlayer", 1);
-
-pub(crate) const AV_TRANSPORT: &URN = &URN::service("schemas-upnp-org", "AVTransport", 1);
-const DEVICE_PROPERTIES: &URN = &URN::service("schemas-upnp-org", "DeviceProperties", 1);
-const RENDERING_CONTROL: &URN = &URN::service("schemas-upnp-org", "RenderingControl", 1);
-pub(crate) const ZONE_GROUP_TOPOLOGY: &URN =
-    &URN::service("schemas-upnp-org", "ZoneGroupTopology", 1);
-const CONTENT_DIRECTORY: &URN = &URN::service("schemas-upnp-org", "ContentDirectory", 1);
-const QUEUE: &URN = &URN::service("schemas-sonos-com", "Queue", 1);
-const MUSIC_SERVICES: &URN = &URN::service("schemas-upnp-org", "MusicServices", 1);
+use std::{collections::HashMap, hash::Hash, hash::Hasher, net::Ipv4Addr};
 
 pub(crate) const EXTRA_DEVICE_FIELDS: &[&str; 2] = &["roomName", "UDN"];
 
@@ -29,8 +19,8 @@ const DEFAULT_ARGS: &str = "<InstanceID>0</InstanceID>";
 /// A sonos speaker, wrapping a UPnP-Device and providing user-oriented methods in an asynyronous
 /// API.
 pub struct Speaker {
-    pub(crate) device: Device,
-    pub(crate) info: SpeakerInfo,
+    device: Device,
+    info: SpeakerInfo,
 }
 
 #[allow(missing_docs)]
@@ -553,6 +543,80 @@ impl Speaker {
             })?
             .action(self.device.url(), action, payload)
             .await?)
+    }
+}
+
+/// A more lightweight representation of a speaker containing only the name, uuid and location.
+/// It gets returned by the [zone_group_state](struct.Speaker.html#method.zone_group_state) function.
+#[derive(Debug, Eq, Clone)]
+pub struct SpeakerInfo {
+    name: String,
+    uuid: String,
+    location: String,
+}
+impl PartialEq for SpeakerInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.uuid().eq_ignore_ascii_case(other.uuid())
+    }
+}
+impl Hash for SpeakerInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.uuid.hash(state);
+    }
+}
+
+#[allow(missing_docs)]
+impl SpeakerInfo {
+    pub fn from_xml(node: Node<'_, '_>) -> Result<Self> {
+        let mut uuid = None;
+        let mut name = None;
+        let mut location = None;
+
+        for attr in node.attributes() {
+            match attr.name().to_lowercase().as_str() {
+                "uuid" => uuid = Some(attr.value()),
+                "location" => location = Some(attr.value()),
+                "zonename" => name = Some(attr.value()),
+                _ => (),
+            }
+        }
+
+        Ok(Self {
+            name: name
+                .ok_or_else(|| {
+                    rupnp::Error::XmlMissingElement(
+                        "RoomName".to_string(),
+                        "ZoneGroupMember".to_string(),
+                    )
+                })?
+                .to_string(),
+            uuid: uuid
+                .ok_or_else(|| {
+                    rupnp::Error::XmlMissingElement(
+                        "UUID".to_string(),
+                        "ZoneGroupMember".to_string(),
+                    )
+                })?
+                .to_string(),
+            location: location
+                .ok_or_else(|| {
+                    rupnp::Error::XmlMissingElement(
+                        "Location".to_string(),
+                        "ZoneGroupMember".to_string(),
+                    )
+                })?
+                .to_string(),
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+    pub fn location(&self) -> &str {
+        &self.location
     }
 }
 

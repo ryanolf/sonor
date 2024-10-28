@@ -1,5 +1,6 @@
 use crate::{
-    speaker::{Speaker, EXTRA_DEVICE_FIELDS, SONOS_URN},
+    speaker::{Speaker, EXTRA_DEVICE_FIELDS},
+    urns::SONOS_URN,
     Error, Result,
 };
 use futures_util::stream::{FuturesUnordered, Stream, TryStreamExt};

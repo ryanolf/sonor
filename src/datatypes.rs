@@ -1,10 +1,4 @@
-use crate::Result;
-use roxmltree::Node;
-use std::{
-    cmp::PartialEq,
-    fmt,
-    hash::{Hash, Hasher},
-};
+use std::fmt;
 
 /// This enum describes how Sonos repeats the current playlist.
 #[derive(Debug, Default)]
@@ -43,79 +37,5 @@ impl std::str::FromStr for RepeatMode {
             "all" => Ok(RepeatMode::All),
             _ => Err(ParseRepeatModeError),
         }
-    }
-}
-
-/// A more lightweight representation of a speaker containing only the name, uuid and location.
-/// It gets returned by the [zone_group_state](struct.Speaker.html#method.zone_group_state) function.
-#[derive(Debug, Eq, Clone)]
-pub struct SpeakerInfo {
-    pub(crate) name: String,
-    pub(crate) uuid: String,
-    pub(crate) location: String,
-}
-impl PartialEq for SpeakerInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.uuid().eq_ignore_ascii_case(other.uuid())
-    }
-}
-impl Hash for SpeakerInfo {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.uuid.hash(state);
-    }
-}
-
-#[allow(missing_docs)]
-impl SpeakerInfo {
-    pub fn from_xml(node: Node<'_, '_>) -> Result<Self> {
-        let mut uuid = None;
-        let mut name = None;
-        let mut location = None;
-
-        for attr in node.attributes() {
-            match attr.name().to_lowercase().as_str() {
-                "uuid" => uuid = Some(attr.value()),
-                "location" => location = Some(attr.value()),
-                "zonename" => name = Some(attr.value()),
-                _ => (),
-            }
-        }
-
-        Ok(Self {
-            name: name
-                .ok_or_else(|| {
-                    rupnp::Error::XmlMissingElement(
-                        "RoomName".to_string(),
-                        "ZoneGroupMember".to_string(),
-                    )
-                })?
-                .to_string(),
-            uuid: uuid
-                .ok_or_else(|| {
-                    rupnp::Error::XmlMissingElement(
-                        "UUID".to_string(),
-                        "ZoneGroupMember".to_string(),
-                    )
-                })?
-                .to_string(),
-            location: location
-                .ok_or_else(|| {
-                    rupnp::Error::XmlMissingElement(
-                        "Location".to_string(),
-                        "ZoneGroupMember".to_string(),
-                    )
-                })?
-                .to_string(),
-        })
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-    pub fn uuid(&self) -> &str {
-        &self.uuid
-    }
-    pub fn location(&self) -> &str {
-        &self.location
     }
 }
