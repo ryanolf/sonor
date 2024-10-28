@@ -86,6 +86,14 @@ impl Speaker {
         &self.info.uuid
     }
 
+    pub fn set_name(&mut self, name: String) {
+        self.info.name = name;
+    }
+
+    pub fn set_location(&mut self, location: String) {
+        self.info.location = location;
+    }
+
     // AV_TRANSPORT
     pub async fn stop(&self) -> Result<()> {
         self.action(AV_TRANSPORT, "Stop", DEFAULT_ARGS)
@@ -563,6 +571,14 @@ impl Hash for SpeakerInfo {
 
 #[allow(missing_docs)]
 impl SpeakerInfo {
+    pub fn new(uuid: String, name: String, location: String) -> Self {
+        Self {
+            name,
+            uuid,
+            location,
+        }
+    }
+
     pub fn from_xml(node: Node<'_, '_>) -> Result<Self> {
         let mut uuid = None;
         let mut name = None;
