@@ -1,9 +1,13 @@
 #[allow(unused_imports)]
-use super::{*, controller::Controller};
+use super::{controller::Controller, *};
 
 #[tokio::test]
 async fn test_controller() -> Result<(), Error> {
-    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .is_test(true)
+        .init();
+
     let mut controller = Controller::new();
     let _tx = controller.init().await?;
 

@@ -28,7 +28,7 @@ async-trait = "0.1.51"
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }
 futures = "0.3"
-simple_logger = "1.13.0"
+env_logger = "0.11"
 
 [patch.crates-io]
 rupnp = { path = "../rupnp" }

@@ -365,15 +365,14 @@ impl Controller {
 
     /// Run the event loop.
     ///
-    ///     * Subscribe and listen to events on the sonos system
-    ///     * Keep system state up-to-date
-    ///     * Listen for commands from clients to perform actions on zones.
+    /// - Subscribe and listen to events on the sonos system
+    /// - Keep system state up-to-date
+    /// - Listen for commands from clients to perform actions on zones.
     ///
     /// Will return an error if system goes offline.
     ///
     /// Whether this function returns an error or not, the reciever will drop
     /// and the controller will need to be re-initialized.
-
     pub async fn run(&mut self) -> Result<()> {
         use Command::*;
 

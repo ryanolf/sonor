@@ -1,14 +1,16 @@
 #![allow(unused_imports)]
 use std::time::Duration;
 
-use sonor::manager::{Manager, Error, MediaSource::*};
+use sonor::manager::{Error, Manager, MediaSource::*};
 use tokio::time::sleep;
 // const ZONE: &str = "Sonos Roam";
 const ZONE: &str = "Master Bedroom";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
 
     let manager = Manager::new_with_roomname(ZONE).await?;
     println!("Got manager");
@@ -19,8 +21,10 @@ async fn main() -> Result<(), Error> {
     // zone.next_track().await?;
     // zone.play_now(Apple("track:1025212410".into())).await?;
     // zone.play_now(Spotify("track:4LI1ykYGFCcXPWkrpcU7hn".into())).await?;
-    zone.play_now(Spotify("album:7DuJYWu66RPdcekF5TuZ7w".into())).await?;
-    zone.play_now(Spotify("playlist:37i9dQZF1DX889U0CL85jj".into())).await?;
+    zone.play_now(Spotify("album:7DuJYWu66RPdcekF5TuZ7w".into()))
+        .await?;
+    zone.play_now(Spotify("playlist:37i9dQZF1DX889U0CL85jj".into()))
+        .await?;
     // zone.play_now(Apple("album:1439398162".into())).await?;
     // zone.play_now(SonosFavorite("New York Rhapsody".into())).await?;
     // sleep(Duration::from_secs(10)).await;
