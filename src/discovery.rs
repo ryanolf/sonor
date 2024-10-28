@@ -56,7 +56,7 @@ pub async fn discover(timeout: Duration) -> Result<impl Stream<Item = Result<Spe
 
     if let Some(device) = devices.try_next().await? {
         let iter = device
-            ._zone_group_state()
+            .zone_group_state()
             .await?
             .into_iter()
             .flat_map(|(_, speakers)| speakers)

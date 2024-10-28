@@ -388,18 +388,14 @@ impl Speaker {
             .map(drop)
     }
 
-    pub(crate) async fn _zone_group_state(&self) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
+    /// Returns all groups in the system as a vector of tuples of coordinators UUID with a list of [Speaker Info](struct.SpeakerInfo.html)s.
+    pub async fn zone_group_state(&self) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
         let state = self
             .action(ZONE_GROUP_TOPOLOGY, "GetZoneGroupState", "")
             .await?
             .extract("ZoneGroupState")?;
 
         extract_zone_topology(&state)
-    }
-
-    /// Returns all groups in the system as a map from the group coordinators UUID to a list of [Speaker Info](struct.SpeakerInfo.html)s.
-    pub async fn zone_group_state(&self) -> Result<HashMap<String, Vec<SpeakerInfo>>> {
-        Ok(self._zone_group_state().await?.into_iter().collect())
     }
 
     /// Form a group with a player.
@@ -415,7 +411,7 @@ impl Speaker {
     /// Returns `false` when no player with that roomname exists.
     /// `roomname` is compared case insensitively.
     pub async fn join(&self, roomname: &str) -> Result<bool> {
-        let topology = self._zone_group_state().await?;
+        let topology = self.zone_group_state().await?;
         let uuid = topology
             .iter()
             .flat_map(|(_, speakers)| speakers)
