@@ -342,7 +342,7 @@ impl Speaker {
 
     // Queue
     pub async fn queue(&self) -> Result<Vec<Track>> {
-        let args = args! { "QueueID": 0, "StartingIndex": 0, "RequestedCount": std::u32::MAX };
+        let args = args! { "QueueID": 0, "StartingIndex": 0, "RequestedCount": u32::MAX };
         let result = self
             .action(QUEUE, "Browse", args)
             .await?
@@ -627,7 +627,7 @@ impl SpeakerInfo {
 /// UUID and the second element is a vector of
 /// [SpeakerInfo](struct.SpeakerInfo.html)s.
 pub fn extract_zone_topology(state_xml: &str) -> Result<Vec<(String, Vec<SpeakerInfo>)>> {
-    let doc = Document::parse(&state_xml)?;
+    let doc = Document::parse(state_xml)?;
     let state = utils::find_root_node(&doc, "ZoneGroups", "Zone Group Topology")?;
 
     state
